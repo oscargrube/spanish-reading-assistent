@@ -1,13 +1,30 @@
 {
   "name": "spanish-reading-assistant",
-  "private": true,
   "version": "0.0.0",
-  "type": "module",
-  "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
+  "private": true,
+  "description": "<div align=\"center\">\r <img width=\"1200\" height=\"475\" alt=\"GHBanner\" src=\"https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6\" />\r </div>",
+  "homepage": " https://oscargrube.github.io/spanish-reading-assistent/",
+  "bugs": {
+    "url": "https://github.com/oscargrube/spanish-reading-assistent/issues"
   },
+    
+
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/oscargrube/spanish-reading-assistent.git"
+  },
+  "license": "ISC",
+  "author": "",
+  "type": "module",
+  "main": "index.js",
+"scripts": {
+  "dev": "vite",
+  "build": "vite build",
+  "preview": "vite preview",
+  "predeploy": "npm run build",
+  "deploy": "gh-pages -d dist"
+}
+,
   "dependencies": {
     "@google/genai": "^1.31.0",
     "lucide-react": "^0.555.0",

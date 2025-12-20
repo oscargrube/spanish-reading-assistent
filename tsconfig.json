@@ -1,11 +1,5 @@
 {
-  "homepage": " https://oscargrube.github.io/spanish-reading-assistent/",
-   
-  "scripts": {
-  "predeploy": "npm run build",
-  "deploy": "gh-pages -d build"
-}
-,
+
 
   "compilerOptions": {
     "target": "ES2022",
