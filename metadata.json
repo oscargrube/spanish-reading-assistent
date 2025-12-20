@@ -1,0 +1,8 @@
+{
+  "name": "Spanish Reading Assistant",
+  "description": "An AI-powered assistant for reading Spanish books, translating sentences, and learning vocabulary.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
