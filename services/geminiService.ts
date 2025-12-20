@@ -1,4 +1,3 @@
-
 import { GoogleGenAI, Type, Schema, Modality } from "@google/genai";
 import { PageAnalysisResult } from "../types";
 import { getApiKey } from "./storageService";
@@ -83,7 +82,15 @@ const analysisSchema: Schema = {
 
 // Always create a fresh instance to ensure we use the most up-to-date API Key
 const getAI = () => {
-    const apiKey = getApiKey() || process.env.API_KEY;
+    // Sicherstellen, dass process.env existiert, bevor darauf zugegriffen wird
+    let envKey: string | undefined;
+    try {
+        envKey = (typeof process !== 'undefined' && process.env) ? process.env.API_KEY : undefined;
+    } catch (e) {
+        envKey = undefined;
+    }
+
+    const apiKey = getApiKey() || envKey;
     if (!apiKey) {
         throw new Error("API Key is missing. Please set your API key in settings.");
     }
