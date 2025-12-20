@@ -4,6 +4,7 @@ import { VocabItem, PageAnalysisResult, PersistedAnalysis } from '../types';
 const VOCAB_KEY = 'spanish_assistant_vocab';
 const ANALYSIS_KEY = 'spanish_assistant_last_analysis';
 const HISTORY_KEY = 'spanish_assistant_history';
+const CUSTOM_API_KEY = 'spanish_assistant_custom_api_key';
 
 export const getVocab = (): VocabItem[] => {
   try {
@@ -97,4 +98,17 @@ export const clearLastAnalysis = () => {
 export const getHistory = (): PersistedAnalysis[] => {
     const stored = localStorage.getItem(HISTORY_KEY);
     return stored ? JSON.parse(stored) : [];
+};
+
+// API Key Management
+export const saveApiKey = (key: string) => {
+    localStorage.setItem(CUSTOM_API_KEY, key);
+};
+
+export const getApiKey = (): string | null => {
+    return localStorage.getItem(CUSTOM_API_KEY);
+};
+
+export const removeApiKey = () => {
+    localStorage.removeItem(CUSTOM_API_KEY);
 };

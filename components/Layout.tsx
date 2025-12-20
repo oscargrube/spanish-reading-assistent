@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Book, Camera, Bookmark, Sparkles, Key } from 'lucide-react';
+import { Book, Camera, Bookmark, Sparkles, Settings } from 'lucide-react';
 import { AppView } from '../types';
 
 interface LayoutProps {
@@ -10,14 +10,6 @@ interface LayoutProps {
 }
 
 const Layout: React.FC<LayoutProps> = ({ currentView, onChangeView, children }) => {
-  const handleKeyClick = async () => {
-    if (typeof (window as any).aistudio !== 'undefined') {
-        await (window as any).aistudio.openSelectKey();
-    } else {
-        alert("API Key wird über die Umgebungsvariablen gesteuert.");
-    }
-  };
-
   return (
     <div className="min-h-screen flex flex-col bg-[#FDFBF7]">
       <header className="bg-[#FDFBF7]/90 backdrop-blur-xl border-b border-[#EAE2D6] sticky top-0 z-50">
@@ -58,11 +50,11 @@ const Layout: React.FC<LayoutProps> = ({ currentView, onChangeView, children }) 
 
           <div className="flex items-center gap-2">
             <button 
-                onClick={handleKeyClick}
-                className="p-2.5 rounded-xl bg-white border border-[#EAE2D6] text-[#6B705C] hover:text-[#B26B4A] transition-colors shadow-sm"
-                title="API Key verwalten"
+                onClick={() => onChangeView(AppView.SETTINGS)}
+                className={`p-2.5 rounded-xl transition-colors shadow-sm ${currentView === AppView.SETTINGS ? 'bg-[#2C2420] text-white' : 'bg-white border border-[#EAE2D6] text-[#6B705C] hover:text-[#B26B4A]'}`}
+                title="Einstellungen"
             >
-                <Key className="w-4 h-4" />
+                <Settings className="w-4 h-4" />
             </button>
             <div className="hidden lg:flex items-center gap-2 bg-[#E9EDC9] p-1.5 px-3 rounded-full border border-[#6B705C]/10">
                 <Sparkles className="w-3 h-3 text-[#6B705C]" />

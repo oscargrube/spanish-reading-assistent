@@ -3,8 +3,9 @@ import React, { useState, useEffect } from 'react';
 import Layout from './components/Layout';
 import AnalysisView from './components/AnalysisView';
 import VocabTrainer from './components/VocabTrainer';
+import SettingsView from './components/SettingsView';
 import { AppView, PersistedAnalysis } from './types';
-import { BookOpen, Camera, Bookmark, Sparkles, History, ArrowRight } from 'lucide-react';
+import { BookOpen, Camera, Bookmark, Sparkles, History, ArrowRight, Settings } from 'lucide-react';
 import { getLastAnalysis, getVocab } from './services/storageService';
 
 export default function App() {
@@ -20,9 +21,11 @@ export default function App() {
   const renderContent = () => {
     switch (currentView) {
       case AppView.ANALYZE:
-        return <AnalysisView />;
+        return <AnalysisView onChangeView={setCurrentView} />;
       case AppView.VOCAB:
         return <VocabTrainer />;
+      case AppView.SETTINGS:
+        return <SettingsView />;
       case AppView.HOME:
       default:
         return (
@@ -97,19 +100,21 @@ export default function App() {
                 </div>
             </div>
 
-            {/* Daily Thought / Status */}
-            <div className="bg-[#FEFAE0]/40 rounded-[2rem] p-6 border border-[#FAEDCD]">
-                <div className="flex items-center gap-2 mb-2">
-                    <div className="bg-[#B26B4A] p-1 rounded-lg text-white">
-                        <Sparkles className="w-3 h-3" />
+            {/* Quick Access to Settings */}
+            <div 
+                onClick={() => setCurrentView(AppView.SETTINGS)}
+                className="bg-white p-6 rounded-[2rem] border border-[#EAE2D6] cursor-pointer flex items-center justify-between hover:bg-[#FDFBF7] transition-colors"
+            >
+                <div className="flex items-center gap-4">
+                    <div className="bg-[#2C2420]/5 p-3 rounded-xl">
+                        <Settings className="w-5 h-5 text-[#6B705C]" />
                     </div>
-                    <h3 className="font-serif font-bold text-[#2C2420] text-lg">
-                        Lokal & Sicher
-                    </h3>
+                    <div>
+                        <p className="text-sm font-bold text-[#2C2420]">API Key & Einstellungen</p>
+                        <p className="text-xs text-[#6B705C] italic">Verwalte deinen Zugang und lerne mehr.</p>
+                    </div>
                 </div>
-                <p className="text-[#6B705C] text-sm font-serif italic leading-relaxed">
-                    Alle Analysen und Vokabeln werden ausschließlich in Ihrem Browser-Speicher (Local Storage) abgelegt. Es werden keine Daten auf externe Server übertragen, außer zur KI-Analyse an Google.
-                </p>
+                <ArrowRight className="w-4 h-4 text-[#EAE2D6]" />
             </div>
           </div>
         );

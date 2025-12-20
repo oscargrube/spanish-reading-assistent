@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { VocabItem, WordCategory } from '../types';
 import { getVocab, removeVocab, toggleMastered } from '../services/storageService';
-import { Trash2, CheckCircle, GraduationCap, RefreshCw, Layers, Play } from 'lucide-react';
+import { Trash2, CheckCircle, GraduationCap, RefreshCw, Layers, Play, Download } from 'lucide-react';
 import { generateSpeech } from '../services/geminiService';
 
 const VocabTrainer: React.FC = () => {
@@ -36,6 +36,18 @@ const VocabTrainer: React.FC = () => {
   const handleDelete = (id: string) => {
     removeVocab(id);
     loadVocab();
+  };
+
+  const handleExport = () => {
+    const dataStr = JSON.stringify(vocabList, null, 2);
+    const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+    
+    const exportFileDefaultName = `spanish-vocab-${new Date().toISOString().split('T')[0]}.json`;
+    
+    const linkElement = document.createElement('a');
+    linkElement.setAttribute('href', dataUri);
+    linkElement.setAttribute('download', exportFileDefaultName);
+    linkElement.click();
   };
 
   const startSession = () => {
@@ -129,7 +141,16 @@ const VocabTrainer: React.FC = () => {
                         <h2 className="text-4xl font-serif font-bold">{unmasteredCount}</h2>
                         <p className="text-[#FDFBF7]/60 text-sm font-serif italic tracking-wide">Wörter warten auf dich.</p>
                     </div>
-                    <Layers className="w-8 h-8 text-[#B26B4A]" />
+                    <div className="flex gap-2">
+                        <button 
+                            onClick={handleExport}
+                            className="p-3 bg-white/10 hover:bg-white/20 rounded-2xl text-[#FDFBF7] transition-all border border-white/10"
+                            title="Vokabeln exportieren"
+                        >
+                            <Download className="w-5 h-5" />
+                        </button>
+                        <Layers className="w-8 h-8 text-[#B26B4A]" />
+                    </div>
                 </div>
                 
                 <button 

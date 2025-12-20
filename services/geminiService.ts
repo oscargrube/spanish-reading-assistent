@@ -1,6 +1,7 @@
 
 import { GoogleGenAI, Type, Schema, Modality } from "@google/genai";
 import { PageAnalysisResult } from "../types";
+import { getApiKey } from "./storageService";
 
 // Helper to encode string to base64
 function encode(bytes: Uint8Array) {
@@ -80,11 +81,11 @@ const analysisSchema: Schema = {
   required: ["sentences"]
 };
 
-// Always create a fresh instance to ensure we use the most up-to-date API Key from process.env
+// Always create a fresh instance to ensure we use the most up-to-date API Key
 const getAI = () => {
-    const apiKey = process.env.API_KEY;
+    const apiKey = getApiKey() || process.env.API_KEY;
     if (!apiKey) {
-        throw new Error("API Key is missing. Please select an API key.");
+        throw new Error("API Key is missing. Please set your API key in settings.");
     }
     return new GoogleGenAI({ apiKey });
 }
@@ -96,21 +97,15 @@ export const analyzeImage = async (base64Image: string): Promise<PageAnalysisRes
     Analyze the attached Spanish book page. You are an expert Spanish teacher.
     
     CRITICAL INSTRUCTIONS:
-    1. COMPLETE TRANSCRIPTION: You MUST process EVERY SINGLE SENTENCE visible on the page. Do not skip the first or last sentences. Scan line by line.
-    2. PHRASE BINDING: Combine words that belong together into a SINGLE 'word' object:
-       - Reflexive verbs: "se levantó", "me gusta", "irse".
-       - Multi-word connectors: "tal vez", "por qué", "sin embargo", "a lo mejor", "de repente".
-       - Idiomatic phrases: "tener que", "dar un paseo".
-    3. FULL CHARACTER COVERAGE: The 'words' array for each sentence must reconstruct the 'original' string perfectly (including spaces and punctuation).
-    4. DATA TYPES: 
-       - 'punctuation': symbols, marks, or standalone spaces.
-       - 'word': actual words or combined phrases.
-    5. No placeholders. If you find text, you analyze it.
+    1. COMPLETE TRANSCRIPTION: You MUST process EVERY SINGLE SENTENCE visible on the page. Do not skip any sentences.
+    2. PHRASE BINDING: Combine words that belong together (reflexive verbs like "se levantó", idioms like "tener que") into a SINGLE 'word' object.
+    3. FULL CHARACTER COVERAGE: Reconstruct the 'original' string perfectly including spaces.
+    4. Provide the result in German.
   `;
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-3-pro-preview',
+      model: 'gemini-3-flash-preview', 
       contents: {
         parts: [
           {
@@ -125,8 +120,7 @@ export const analyzeImage = async (base64Image: string): Promise<PageAnalysisRes
       config: {
         responseMimeType: "application/json",
         responseSchema: analysisSchema,
-        systemInstruction: "You are a professional Spanish-to-German translator and linguist. Your goal is to extract ALL sentences from an image and group related lexical units like reflexive verbs and compound phrases as single items for a vocabulary learner.",
-        thinkingConfig: { thinkingBudget: 12000 } 
+        systemInstruction: "You are a professional Spanish-to-German translator. Extract all text and provide linguistic analysis for learners.",
       }
     });
 

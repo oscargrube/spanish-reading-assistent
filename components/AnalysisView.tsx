@@ -1,11 +1,15 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Camera, Play, Loader2, ArrowRight, CheckCircle, RotateCcw, ChevronRight, ChevronLeft, XCircle, Sparkles, Book, Key } from 'lucide-react';
-import { PageAnalysisResult, WordAnalysis } from '../types';
+import { PageAnalysisResult, WordAnalysis, AppView } from '../types';
 import { analyzeImage, generateSpeech } from '../services/geminiService';
-import { addVocabBatch, isVocabSaved, saveCurrentAnalysis, getLastAnalysis, clearLastAnalysis } from '../services/storageService';
+import { addVocabBatch, isVocabSaved, saveCurrentAnalysis, getLastAnalysis, clearLastAnalysis, getApiKey } from '../services/storageService';
 
-const AnalysisView: React.FC = () => {
+interface AnalysisViewProps {
+    onChangeView?: (view: AppView) => void;
+}
+
+const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView }) => {
   const [image, setImage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<PageAnalysisResult | null>(null);
@@ -22,35 +26,22 @@ const AnalysisView: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-      // Check if we have a persisted analysis to resume
       const last = getLastAnalysis();
       if (last && !result) {
           setResult(last.data);
           setImage(last.image);
       }
 
-      // Check for API Key presence (AI Studio specific)
-      const checkKey = async () => {
-          if (typeof (window as any).aistudio !== 'undefined') {
-              const hasKey = await (window as any).aistudio.hasSelectedApiKey();
-              if (!hasKey && !process.env.API_KEY) {
-                  setNeedsKey(true);
-              }
-          } else if (!process.env.API_KEY) {
+      const checkKey = () => {
+          const key = getApiKey() || process.env.API_KEY;
+          if (!key) {
               setNeedsKey(true);
+          } else {
+              setNeedsKey(false);
           }
       };
       checkKey();
   }, []);
-
-  const handleOpenKeySelector = async () => {
-      if (typeof (window as any).aistudio !== 'undefined') {
-          await (window as any).aistudio.openSelectKey();
-          setNeedsKey(false);
-      } else {
-          alert("Bitte stellen Sie sicher, dass ein API_KEY in den Umgebungsvariablen gesetzt ist.");
-      }
-  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -67,6 +58,12 @@ const AnalysisView: React.FC = () => {
   };
 
   const handleAnalyze = async (base64Data: string) => {
+    const key = getApiKey() || process.env.API_KEY;
+    if (!key) {
+        setNeedsKey(true);
+        return;
+    }
+
     setLoading(true);
     setResult(null);
     setFinished(false);
@@ -80,10 +77,9 @@ const AnalysisView: React.FC = () => {
       setResult(data);
       saveCurrentAnalysis(data, base64Data);
     } catch (err: any) {
-      if (err.message?.includes("Requested entity was not found")) {
+      if (err.message?.includes("API key")) {
           setNeedsKey(true);
       }
-      alert("Fehler bei der Analyse. Stellen Sie sicher, dass Ihr API Key gültig ist.");
       console.error(err);
       setImage(null);
     } finally {
@@ -233,19 +229,16 @@ const AnalysisView: React.FC = () => {
                   <Key className="w-10 h-10" />
               </div>
               <div className="max-w-sm">
-                  <h2 className="text-2xl font-serif font-bold text-[#2C2420] mb-2">API Key benötigt</h2>
+                  <h2 className="text-2xl font-serif font-bold text-[#2C2420] mb-2">API Key fehlt</h2>
                   <p className="text-[#6B705C] font-serif italic text-sm mb-6">
-                      Um die KI-Analyse zu nutzen, müssen Sie einen eigenen Gemini API Key auswählen. Dieser wird sicher in Ihrem Browser-Kontext verwendet.
+                      Um die App zu nutzen, musst du in den Einstellungen deinen eigenen Gemini API Key hinterlegen.
                   </p>
                   <button 
-                    onClick={handleOpenKeySelector} 
+                    onClick={() => onChangeView?.(AppView.SETTINGS)} 
                     className="w-full bg-[#2C2420] text-white font-bold py-4 px-10 rounded-2xl shadow-lg hover:bg-[#3D332D] transition-colors flex items-center justify-center gap-4 uppercase text-[10px] tracking-widest"
                   >
-                      Key auswählen
+                      Zu den Einstellungen
                   </button>
-                  <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noreferrer" className="block mt-4 text-[10px] font-bold text-[#B26B4A] uppercase tracking-wider hover:underline">
-                      Dokumentation zur Abrechnung
-                  </a>
               </div>
           </div>
       );
@@ -275,7 +268,7 @@ const AnalysisView: React.FC = () => {
         </div>
         <div className="text-center max-w-md px-6">
           <h2 className="text-2xl font-serif font-bold mb-3 text-[#2C2420]">Bereit für ein neues Kapitel?</h2>
-          <p className="text-[#6B705C] text-md font-serif leading-relaxed italic">Mache ein Foto deiner Buchseite.</p>
+          <p className="text-[#6B705C] text-md font-serif italic">Mache ein Foto deiner Buchseite.</p>
         </div>
         <input type="file" accept="image/*" capture="environment" ref={fileInputRef} className="hidden" onChange={handleFileChange} />
         <button onClick={() => fileInputRef.current?.click()} className="bg-[#2C2420] hover:bg-[#3D332D] text-[#FDFBF7] font-bold py-4 px-10 rounded-2xl shadow-xl transition-all active:scale-95 flex items-center gap-4 uppercase text-[10px] tracking-widest">

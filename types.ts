@@ -37,6 +37,7 @@ export enum AppView {
   ANALYZE = 'ANALYZE',
   VOCAB = 'VOCAB',
   HISTORY = 'HISTORY',
+  SETTINGS = 'SETTINGS',
 }
 
 export interface PersistedAnalysis {
