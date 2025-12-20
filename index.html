@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Spanish Reading Assistant</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,400;0,600;0,700;1,400&family=Inter:wght@400;500;600;700&display=swap');
+      
+      :root {
+        --parchment: #FDFBF7;
+        --earth: #2C2420;
+        --sage: #6B705C;
+        --warm: #B26B4A;
+        --paper: #FFFFFF;
+      }
+      
+      body {
+        font-family: 'Inter', sans-serif;
+        background-color: var(--parchment);
+        color: var(--earth);
+        transition: background-color 0.5s ease;
+      }
+      
+      .font-serif {
+        font-family: 'Crimson Pro', serif;
+      }
+      
+      .paper-card {
+        background-color: var(--paper);
+        border: 1px solid #EAE2D6;
+        box-shadow: 0 10px 30px -10px rgba(44, 36, 32, 0.05);
+        transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+      
+      .paper-card:hover {
+        box-shadow: 0 20px 40px -15px rgba(44, 36, 32, 0.1);
+      }
+      
+      /* Custom Scrollbar for the cozy vibe */
+      
+      ::-webkit-scrollbar {
+        width: 6px;
+      }
+      
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      
+      ::-webkit-scrollbar-thumb {
+        background: #EAE2D6;
+        border-radius: 10px;
+      }
+      
+      ::-webkit-scrollbar-thumb:hover {
+        background: #D1C7B7;
+      }
+      
+      .animate-fade-in {
+        animation: fadeIn 0.6s ease-out forwards;
+      }
+      
+      @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+    </style>
+
+<script type="importmap">
+{
+  "imports": {
+    "react": "https://aistudiocdn.com/react@^19.2.1",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.1/",
+    "react/": "https://aistudiocdn.com/react@^19.2.1/",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.31.0",
+    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.555.0"
+  }
+}
+</script>
+  <script type="module" crossorigin src="/spanish-reading-assistent/assets/index-C5dCgbGl.js"></script>
+</head>
+  <body>
+    <div id="root"></div>
+    <!-- WICHTIG: Relativer Pfad ohne führenden Slash für GitHub Pages -->
+  </body>
+</html>
