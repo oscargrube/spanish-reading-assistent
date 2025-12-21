@@ -330,16 +330,16 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView }) => {
     return "Übersetzung zeigen";
   };
   
-  const sentenceContainerClasses = `bg-white rounded-[2rem] border border-[#EAE2D6] shadow-sm flex flex-col transition-all duration-700 ease-in-out relative ${
+  const sentenceContainerClasses = `bg-white rounded-[2rem] border border-[#EAE2D6] shadow-sm flex flex-col transition-[height,opacity] duration-300 relative min-h-[15vh] ${
       sentencePhase === 'initial' || sentencePhase === 'translation'
       ? 'justify-center flex-1 p-6'
-      : 'flex-grow-0 flex-shrink-0 p-4 max-h-1/4'
+      : 'flex-grow-0 flex-shrink-0 p-4 max-h-[25vh]'
   }`;
 
   return (
-    <div className="flex flex-col h-full animate-fade-in">
+    <div className="flex flex-col h-full animate-fade-in px-4 sm:px-6 md:px-8">
         {!hideHeader && (
-            <div className="px-1 pt-2">
+            <div className="pt-2">
                 <div className="w-full bg-[#EAE2D6] h-1 rounded-full overflow-hidden shadow-inner">
                     <div className="bg-[#B26B4A] h-full transition-all duration-1000 ease-in-out" style={{ width: `${((currentSentenceIndex + 1) / (result?.sentences.length || 1)) * 100}%` }}></div>
                 </div>
@@ -354,17 +354,16 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView }) => {
             </div>
         )}
        
-        <div className="flex-1 flex flex-col gap-4 items-stretch overflow-hidden pb-4">
-            {currentSentence && (
-                <div 
-                    className={`flex flex-col gap-4 items-stretch transition-all duration-700 ease-in-out flex-1 ${
-                        sentencePhase === 'analyzing' 
-                        ? '' 
-                        : 'justify-center'
-                    }`}
-                >
-                    <div className={sentenceContainerClasses}>
-                        <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
+                <div className="flex-1 flex flex-col gap-4 overflow-y-auto pb-4">
+                    {currentSentence && (
+                        <div
+                            className={`flex flex-col gap-4 transition-opacity duration-300 flex-1 ${
+                                sentencePhase === 'analyzing'
+                                ? ''
+                                : 'justify-center'
+                            }`}
+                        >
+                            <div className={sentenceContainerClasses}>                        <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
                             <p className={`font-serif text-[#2C2420] leading-[1.6] transition-all duration-500 ${
                                 sentencePhase === 'initial' || sentencePhase === 'translation' ? 'text-2xl text-center' : 'text-base'
                             }`}>
@@ -405,9 +404,9 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView }) => {
                         </div>
                     </div>
 
-                    <div className={`transition-opacity duration-500 flex flex-col ${sentencePhase === 'analyzing' ? 'opacity-100 flex-1' : 'opacity-0 pointer-events-none'}`}>
+                    <div className={`transition-opacity duration-300 flex flex-col ${sentencePhase === 'analyzing' ? 'opacity-100 flex-1' : 'opacity-0 pointer-events-none h-0'}`}>
                         {currentWord && currentWord.type === 'word' ? (
-                            <div className="bg-[#2C2420] text-[#FDFBF7] p-8 rounded-[2rem] shadow-xl h-full flex flex-col relative animate-in fade-in slide-in-from-bottom-4 lg:slide-in-from-right-4 duration-500">
+                            <div className="bg-[#2C2420] text-[#FDFBF7] p-8 rounded-[2rem] shadow-xl h-[30vh] flex flex-col relative overflow-y-auto">
                                 <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar lg:min-h-[250px]">
                                     <div className="flex flex-col gap-1 mb-4">
                                         <span className="text-[8px] font-bold uppercase tracking-widest text-[#FDFBF7]/40">
@@ -458,7 +457,7 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView }) => {
             )}
         </div>
 
-        <div className="w-full max-w-lg mx-auto px-4 pb-4">
+        <div className="w-full max-w-lg mx-auto sticky bottom-0 bg-white z-10 py-4">
             <div className="flex items-stretch gap-3">
                 <button 
                     onClick={handlePrevStep} 

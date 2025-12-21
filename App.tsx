@@ -4,6 +4,7 @@ import Layout from './components/Layout';
 import AnalysisView from './components/AnalysisView';
 import VocabTrainer from './components/VocabTrainer';
 import SettingsView from './components/SettingsView';
+import { AppView } from './types';
 import { AppView, PersistedAnalysis } from './types';
 import { BookOpen, Camera, Bookmark, Sparkles, History, ArrowRight, Settings } from 'lucide-react';
 import { getLastAnalysis, getVocab } from './services/storageService';
