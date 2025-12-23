@@ -330,14 +330,10 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView }) => {
     return "Übersetzung zeigen";
   };
   
-  const sentenceContainerClasses = `bg-white rounded-[2rem] border border-[#EAE2D6] shadow-sm flex flex-col transition-[height,opacity] duration-300 relative min-h-[15vh] ${
-      sentencePhase === 'initial' || sentencePhase === 'translation'
-      ? 'justify-center flex-1 p-6'
-      : 'flex-grow-0 flex-shrink-0 p-4 max-h-[25vh]'
-  }`;
+
 
   return (
-    <div className="flex flex-col h-full animate-fade-in px-4 sm:px-6 md:px-8">
+    <div className="flex flex-col h-screen animate-fade-in px-4 sm:px-6 md:px-8 pb-24">
         {!hideHeader && (
             <div className="pt-2">
                 <div className="w-full bg-[#EAE2D6] h-1 rounded-full overflow-hidden shadow-inner">
@@ -354,7 +350,7 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView }) => {
             </div>
         )}
        
-                <div className="flex-1 flex flex-col gap-4 overflow-y-auto pb-4">
+                <div className="flex-1 flex flex-col gap-4 overflow-hidden">
                     {currentSentence && (
                         <div
                             className={`flex flex-col gap-4 transition-opacity duration-300 flex-1 ${
@@ -363,7 +359,7 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView }) => {
                                 : 'justify-center'
                             }`}
                         >
-                            <div className={sentenceContainerClasses}>                        <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
+                            <div className="bg-white rounded-[2rem] border border-[#EAE2D6] shadow-sm flex flex-col justify-center p-6 h-[20vh] lg:h-[25vh]">                        <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
                             <p className={`font-serif text-[#2C2420] leading-[1.6] transition-all duration-500 ${
                                 sentencePhase === 'initial' || sentencePhase === 'translation' ? 'text-2xl text-center' : 'text-base'
                             }`}>
@@ -404,61 +400,64 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView }) => {
                         </div>
                     </div>
 
-                    <div className={`transition-opacity duration-300 flex flex-col ${sentencePhase === 'analyzing' ? 'opacity-100 flex-1' : 'opacity-0 pointer-events-none h-0'}`}>
-                        {currentWord && currentWord.type === 'word' ? (
-                            <div className="bg-[#2C2420] text-[#FDFBF7] p-8 rounded-[2rem] shadow-xl h-[30vh] flex flex-col relative overflow-y-auto">
-                                <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar lg:min-h-[250px]">
-                                    <div className="flex flex-col gap-1 mb-4">
-                                        <span className="text-[8px] font-bold uppercase tracking-widest text-[#FDFBF7]/40">
-                                            {currentWord.category || 'Wort'}
-                                        </span>
-                                        <h4 className="text-3xl font-serif font-bold tracking-tight text-[#FEFAE0] leading-tight">{currentWord.word}</h4>
-                                    </div>
-                                    
-                                    <div className="mb-4">
-                                        <h5 className="text-xl text-[#FDFBF7] font-serif italic mb-1">{currentWord.translation}</h5>
-                                        {currentWord.baseForm && currentWord.baseForm !== currentWord.word && (
-                                             <p className="text-[10px] text-[#FDFBF7]/40 font-medium tracking-wide">Lemma: <span className="text-[#FDFBF7]/80 italic">{currentWord.baseForm}</span></p>
+                    <div className={`relative h-[45vh] lg:flex-1`}>
+                        <div className={`absolute inset-0 transition-opacity duration-300 ${sentencePhase === 'analyzing' ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+                            {currentWord && currentWord.type === 'word' && (
+                                <div className="bg-[#2C2420] text-[#FDFBF7] p-8 rounded-[2rem] shadow-xl h-full flex flex-col">
+                                    <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
+                                        <div className="flex flex-col gap-1 mb-4">
+                                            <span className="text-[8px] font-bold uppercase tracking-widest text-[#FDFBF7]/40">
+                                                {currentWord.category || 'Wort'}
+                                            </span>
+                                            <h4 className="text-3xl font-serif font-bold tracking-tight text-[#FEFAE0] leading-tight">{currentWord.word}</h4>
+                                        </div>
+                                        
+                                        <div className="mb-4">
+                                            <h5 className="text-xl text-[#FDFBF7] font-serif italic mb-1">{currentWord.translation}</h5>
+                                            {currentWord.baseForm && currentWord.baseForm !== currentWord.word && (
+                                                 <p className="text-[10px] text-[#FDFBF7]/40 font-medium tracking-wide">Lemma: <span className="text-[#FDFBF7]/80 italic">{currentWord.baseForm}</span></p>
+                                            )}
+                                        </div>
+
+                                        {currentWord.explanation && (
+                                            <div className="bg-[#FDFBF7]/5 p-4 rounded-2xl border border-[#FDFBF7]/10 mb-4">
+                                                <p className="text-[#FDFBF7]/70 text-md font-serif italic leading-relaxed">"{currentWord.explanation}"</p>
+                                            </div>
                                         )}
                                     </div>
-
-                                    {currentWord.explanation && (
-                                        <div className="bg-[#FDFBF7]/5 p-4 rounded-2xl border border-[#FDFBF7]/10 mb-4">
-                                            <p className="text-[#FDFBF7]/70 text-md font-serif italic leading-relaxed">"{currentWord.explanation}"</p>
-                                        </div>
-                                    )}
+                                    
+                                    <div className="flex items-center justify-between mt-4 pt-4 border-t border-[#FDFBF7]/10">
+                                        <button 
+                                            onClick={() => handlePlayAudio(currentWord.word, `w-${currentSentenceIndex}-${currentWordIndex}`)} 
+                                            className="w-12 h-12 flex items-center justify-center bg-[#B26B4A] text-white rounded-xl hover:bg-[#9E5A3B] shadow-md transition-all active:scale-90"
+                                        >
+                                            {playingAudio === `w-${currentSentenceIndex}-${currentWordIndex}` ? <Loader2 className="w-5 h-5 animate-spin"/> : <Play className="w-5 h-5 fill-current" />}
+                                        </button>
+                                        {isVocabSaved(currentWord.word) && (
+                                            <div className="flex items-center gap-1.5 bg-[#E9EDC9]/10 px-3 py-1.5 rounded-lg border border-[#E9EDC9]/20">
+                                                <CheckCircle className="w-3 h-3 text-[#E9EDC9]" />
+                                                <span className="text-[8px] font-bold uppercase tracking-widest text-[#E9EDC9]">Gemerkt</span>
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
-                                
-                                <div className="flex items-center justify-between mt-4 pt-4 border-t border-[#FDFBF7]/10">
-                                    <button 
-                                        onClick={() => handlePlayAudio(currentWord.word, `w-${currentSentenceIndex}-${currentWordIndex}`)} 
-                                        className="w-12 h-12 flex items-center justify-center bg-[#B26B4A] text-white rounded-xl hover:bg-[#9E5A3B] shadow-md transition-all active:scale-90"
-                                    >
-                                        {playingAudio === `w-${currentSentenceIndex}-${currentWordIndex}` ? <Loader2 className="w-5 h-5 animate-spin"/> : <Play className="w-5 h-5 fill-current" />}
-                                    </button>
-                                    {isVocabSaved(currentWord.word) && (
-                                        <div className="flex items-center gap-1.5 bg-[#E9EDC9]/10 px-3 py-1.5 rounded-lg border border-[#E9EDC9]/20">
-                                            <CheckCircle className="w-3 h-3 text-[#E9EDC9]" />
-                                            <span className="text-[8px] font-bold uppercase tracking-widest text-[#E9EDC9]">Gemerkt</span>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        ) : (
-                            <div className="h-full hidden lg:flex flex-col items-center justify-center border-2 border-dashed border-[#EAE2D6] rounded-[2rem] p-6 bg-white/50 min-h-[200px]">
+                            )}
+                        </div>
+                        <div className={`absolute inset-0 transition-opacity duration-300 ${sentencePhase !== 'analyzing' ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+                            <div className="h-full flex flex-col items-center justify-center border-2 border-dashed border-[#EAE2D6] rounded-[2rem] p-6 bg-white/50">
                                 <Sparkles className="w-8 h-8 text-[#EAE2D6] mb-3" />
                                 <p className="text-[#A5A58D] text-md font-serif italic text-center leading-relaxed">
                                     {sentencePhase === 'translation' ? "Satz verstanden?" : "Gehe die Worte durch."}
                                 </p>
                             </div>
-                        )}
+                        </div>
                     </div>
                 </div>
             )}
         </div>
 
-        <div className="w-full max-w-lg mx-auto sticky bottom-0 bg-white z-10 py-4">
-            <div className="flex items-stretch gap-3">
+        <div className="fixed bottom-0 left-0 right-0 w-full bg-white z-20 shadow-t">
+            <div className="max-w-lg mx-auto flex items-stretch gap-3 p-4">
                 <button 
                     onClick={handlePrevStep} 
                     disabled={sentencePhase === 'initial'} 
