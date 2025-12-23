@@ -5,6 +5,25 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Spanish Reading Assistant</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            colors: {
+              parchment: {
+                DEFAULT: '#FDFBF7',
+                dark: '#12100E'
+              },
+              earth: {
+                DEFAULT: '#2C2420',
+                dark: '#FDFBF7'
+              }
+            }
+          }
+        }
+      }
+    </script>
     <style>
       @import url('https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,400;0,600;0,700;1,400&family=Inter:wght@400;500;600;700&display=swap');
       
@@ -14,13 +33,23 @@
         --sage: #6B705C;
         --warm: #B26B4A;
         --paper: #FFFFFF;
+        --border: #EAE2D6;
+      }
+
+      .dark {
+        --parchment: #12100E;
+        --earth: #FDFBF7;
+        --sage: #A5A58D;
+        --warm: #D4A373;
+        --paper: #1C1917;
+        --border: #2C2420;
       }
 
       body {
         font-family: 'Inter', sans-serif;
         background-color: var(--parchment);
         color: var(--earth);
-        transition: background-color 0.5s ease;
+        transition: background-color 0.5s ease, color 0.5s ease;
       }
 
       .font-serif {
@@ -29,16 +58,12 @@
 
       .paper-card {
         background-color: var(--paper);
-        border: 1px solid #EAE2D6;
-        box-shadow: 0 10px 30px -10px rgba(44, 36, 32, 0.05);
+        border: 1px solid var(--border);
+        box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.1);
         transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
       }
 
-      .paper-card:hover {
-        box-shadow: 0 20px 40px -15px rgba(44, 36, 32, 0.1);
-      }
-
-      /* Custom Scrollbar for the cozy vibe */
+      /* Custom Scrollbar */
       ::-webkit-scrollbar {
         width: 6px;
       }
@@ -46,11 +71,11 @@
         background: transparent;
       }
       ::-webkit-scrollbar-thumb {
-        background: #EAE2D6;
+        background: var(--border);
         border-radius: 10px;
       }
       ::-webkit-scrollbar-thumb:hover {
-        background: #D1C7B7;
+        background: var(--sage);
       }
 
       .animate-fade-in {
@@ -69,14 +94,16 @@
     "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.1/",
     "react/": "https://aistudiocdn.com/react@^19.2.1/",
     "@google/genai": "https://aistudiocdn.com/@google/genai@^1.31.0",
-    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.555.0"
+    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.555.0",
+    "vite": "https://esm.sh/vite@^7.3.0",
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2",
+    "path": "https://esm.sh/path@^0.12.7"
   }
 }
 </script>
 </head>
   <body>
     <div id="root"></div>
-    <!-- WICHTIG: Relativer Pfad ohne führenden Slash für GitHub Pages -->
     <script type="module" src="index.tsx"></script>
   </body>
 </html>

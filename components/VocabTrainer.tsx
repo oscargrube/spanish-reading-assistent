@@ -105,8 +105,8 @@ const VocabTrainer: React.FC = () => {
                 onClick={() => setSelectedCategory(cat as any)}
                 className={`px-5 py-2.5 rounded-2xl whitespace-nowrap text-xs font-bold uppercase tracking-widest transition-all duration-300 ${
                     selectedCategory === cat 
-                    ? 'bg-[#B26B4A] text-[#FDFBF7] shadow-lg' 
-                    : 'bg-white text-[#6B705C] border border-[#EAE2D6]'
+                    ? 'bg-[#B26B4A] dark:bg-[#D4A373] text-[#FDFBF7] dark:text-[#12100E] shadow-lg' 
+                    : 'bg-white dark:bg-[#1C1917] text-[#6B705C] dark:text-[#A5A58D] border border-[#EAE2D6] dark:border-[#2C2420]'
                 }`}
               >
                   {cat === 'all' ? 'Alle' : cat === 'noun' ? 'Nomen' : cat === 'verb' ? 'Verben' : cat === 'adjective' ? 'Adjektive' : 'Andere'}
@@ -117,12 +117,12 @@ const VocabTrainer: React.FC = () => {
 
   if (vocabList.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center h-[50vh] text-center p-8">
-        <div className="w-20 h-20 bg-white rounded-full flex items-center justify-center mb-6 text-[#A5A58D] border border-[#EAE2D6]">
+      <div className="flex flex-col items-center justify-center h-[50vh] text-center p-8 animate-fade-in">
+        <div className="w-20 h-20 bg-white dark:bg-[#1C1917] rounded-full flex items-center justify-center mb-6 text-[#A5A58D] border border-[#EAE2D6] dark:border-[#2C2420]">
             <GraduationCap className="w-10 h-10" />
         </div>
-        <h3 className="text-2xl font-serif font-bold text-[#2C2420]">Deine Sammlung ist leer</h3>
-        <p className="text-[#6B705C] mt-3 font-serif italic">Schlage ein Buch auf und fange an zu sammeln.</p>
+        <h3 className="text-2xl font-serif font-bold text-[#2C2420] dark:text-[#FDFBF7]">Deine Sammlung ist leer</h3>
+        <p className="text-[#6B705C] dark:text-[#A5A58D] mt-3 font-serif italic">Schlage ein Buch auf und fange an zu sammeln.</p>
       </div>
     );
   }
@@ -132,9 +132,9 @@ const VocabTrainer: React.FC = () => {
     const unmasteredCount = filteredList.filter(i => !i.mastered).length;
 
     return (
-      <div className="space-y-6 pb-24">
-        <div className="bg-[#2C2420] rounded-[2.5rem] p-8 text-[#FDFBF7] shadow-2xl mb-8 relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-[#B26B4A]/10 rounded-full -mr-16 -mt-16"></div>
+      <div className="space-y-6 pb-24 animate-fade-in">
+        <div className="bg-[#2C2420] dark:bg-[#1C1917] rounded-[2.5rem] p-8 text-[#FDFBF7] shadow-2xl mb-8 relative overflow-hidden border border-transparent dark:border-[#2C2420]">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-[#B26B4A]/10 dark:bg-[#D4A373]/5 rounded-full -mr-16 -mt-16"></div>
             <div className="relative z-10">
                 <div className="flex justify-between items-start mb-4">
                     <div>
@@ -149,14 +149,14 @@ const VocabTrainer: React.FC = () => {
                         >
                             <Download className="w-5 h-5" />
                         </button>
-                        <Layers className="w-8 h-8 text-[#B26B4A]" />
+                        <Layers className="w-8 h-8 text-[#B26B4A] dark:text-[#D4A373]" />
                     </div>
                 </div>
                 
                 <button 
                     onClick={startSession}
                     disabled={unmasteredCount === 0}
-                    className="w-full bg-[#B26B4A] text-white font-bold py-4 rounded-2xl shadow-xl hover:bg-[#9E5A3B] transition-all disabled:opacity-30 mt-4 uppercase text-xs tracking-[0.2em]"
+                    className="w-full bg-[#B26B4A] dark:bg-[#D4A373] text-white dark:text-[#12100E] font-bold py-4 rounded-2xl shadow-xl hover:bg-[#9E5A3B] transition-all disabled:opacity-30 mt-4 uppercase text-xs tracking-[0.2em]"
                 >
                     Lern-Sitzung starten
                 </button>
@@ -170,17 +170,17 @@ const VocabTrainer: React.FC = () => {
                 <p className="text-center text-[#A5A58D] py-12 font-serif italic">Hier gibt es noch nichts zu entdecken.</p>
             ) : (
                 filteredList.map(item => (
-                    <div key={item.id} className="bg-white p-5 rounded-3xl border border-[#EAE2D6] shadow-sm flex justify-between items-center group transition-all hover:border-[#B26B4A]/30">
+                    <div key={item.id} className="bg-white dark:bg-[#1C1917] p-5 rounded-3xl border border-[#EAE2D6] dark:border-[#2C2420] shadow-sm flex justify-between items-center group transition-all hover:border-[#B26B4A]/30 dark:hover:border-[#D4A373]/30">
                         <div>
                             <div className="flex items-center gap-3 mb-1">
-                                <p className="font-serif font-bold text-[#2C2420] text-xl">{item.word}</p>
-                                {item.mastered && <CheckCircle className="w-4 h-4 text-[#6B705C]" />}
+                                <p className="font-serif font-bold text-[#2C2420] dark:text-[#FDFBF7] text-xl">{item.word}</p>
+                                {item.mastered && <CheckCircle className="w-4 h-4 text-[#6B705C] dark:text-[#D4A373]" />}
                             </div>
-                            <p className="text-[#6B705C] text-sm italic font-serif">{item.translation}</p>
+                            <p className="text-[#6B705C] dark:text-[#A5A58D] text-sm italic font-serif">{item.translation}</p>
                         </div>
                         <button 
                             onClick={() => handleDelete(item.id)}
-                            className="p-3 text-[#A5A58D] hover:text-[#B26B4A] hover:bg-[#FEFAE0] rounded-2xl transition-all"
+                            className="p-3 text-[#A5A58D] hover:text-[#B26B4A] dark:hover:text-[#D4A373] hover:bg-[#FEFAE0] dark:hover:bg-[#2C2420] rounded-2xl transition-all"
                         >
                             <Trash2 className="w-5 h-5" />
                         </button>
@@ -195,9 +195,9 @@ const VocabTrainer: React.FC = () => {
   const currentCard = sessionQueue[currentCardIndex];
 
   return (
-    <div className="h-full flex flex-col items-center max-w-md mx-auto">
+    <div className="h-full flex flex-col items-center max-w-md mx-auto animate-fade-in">
         <div className="w-full flex justify-between items-center mb-8">
-            <button onClick={() => setMode('list')} className="text-[#6B705C] hover:text-[#2C2420] text-xs font-bold uppercase tracking-widest bg-white px-4 py-2 rounded-xl border border-[#EAE2D6]">
+            <button onClick={() => setMode('list')} className="text-[#6B705C] dark:text-[#A5A58D] hover:text-[#2C2420] dark:hover:text-[#FDFBF7] text-xs font-bold uppercase tracking-widest bg-white dark:bg-[#1C1917] px-4 py-2 rounded-xl border border-[#EAE2D6] dark:border-[#2C2420]">
                 Abbrechen
             </button>
             <span className="text-[#A5A58D] text-xs font-bold tracking-[0.3em]">
@@ -210,18 +210,18 @@ const VocabTrainer: React.FC = () => {
             className="w-full aspect-[4/5] perspective-1000 cursor-pointer mb-10"
             onClick={() => !showAnswer && setShowAnswer(true)}
         >
-             <div className="relative w-full h-full bg-white rounded-[3rem] shadow-2xl border border-[#EAE2D6] overflow-hidden flex flex-col transition-all duration-500">
-                <div className={`flex-1 flex flex-col items-center justify-center p-10 text-center ${showAnswer ? 'border-b border-[#FDFBF7]' : ''}`}>
-                    <span className="text-[10px] font-bold text-[#B26B4A] uppercase tracking-[0.3em] mb-6">
+             <div className="relative w-full h-full bg-white dark:bg-[#1C1917] rounded-[3rem] shadow-2xl border border-[#EAE2D6] dark:border-[#2C2420] overflow-hidden flex flex-col transition-all duration-500">
+                <div className={`flex-1 flex flex-col items-center justify-center p-10 text-center ${showAnswer ? 'border-b border-[#FDFBF7] dark:border-[#12100E]' : ''}`}>
+                    <span className="text-[10px] font-bold text-[#B26B4A] dark:text-[#D4A373] uppercase tracking-[0.3em] mb-6">
                         {currentCard.category || 'Wort'}
                     </span>
-                    <h2 className="text-5xl font-serif font-bold text-[#2C2420] mb-8">{currentCard.word}</h2>
+                    <h2 className="text-5xl font-serif font-bold text-[#2C2420] dark:text-[#FDFBF7] mb-8">{currentCard.word}</h2>
                     {!showAnswer && (
                         <div className="flex flex-col items-center gap-4">
                             <p className="text-[#A5A58D] text-sm font-serif italic animate-pulse">Karte aufdecken</p>
                             <button 
                                 onClick={(e) => { e.stopPropagation(); playWord(); }}
-                                className="p-4 bg-[#FEFAE0] text-[#B26B4A] rounded-2xl hover:bg-[#FAEDCD]"
+                                className="p-4 bg-[#FEFAE0] dark:bg-[#2C2420] text-[#B26B4A] dark:text-[#D4A373] rounded-2xl hover:bg-[#FAEDCD] dark:hover:bg-black/20"
                             >
                                 <Play className="w-6 h-6 fill-current" />
                             </button>
@@ -230,20 +230,20 @@ const VocabTrainer: React.FC = () => {
                 </div>
 
                 {showAnswer && (
-                    <div className="flex-1 bg-[#FDFBF7] flex flex-col items-center justify-center p-10 text-center animate-in fade-in slide-in-from-bottom-6 duration-500">
-                         <h2 className="text-3xl font-serif font-bold text-[#B26B4A] mb-3">{currentCard.translation}</h2>
+                    <div className="flex-1 bg-[#FDFBF7] dark:bg-[#12100E] flex flex-col items-center justify-center p-10 text-center animate-in fade-in slide-in-from-bottom-6 duration-500">
+                         <h2 className="text-3xl font-serif font-bold text-[#B26B4A] dark:text-[#D4A373] mb-3">{currentCard.translation}</h2>
                          
                          {currentCard.baseForm && currentCard.baseForm !== currentCard.word && (
-                             <p className="text-xs text-[#6B705C] mb-4 font-bold uppercase tracking-widest opacity-60">
+                             <p className="text-xs text-[#6B705C] dark:text-[#A5A58D] mb-4 font-bold uppercase tracking-widest opacity-60">
                                  {currentCard.baseForm}
                              </p>
                          )}
 
-                         <p className="text-[#6B705C] italic font-serif text-lg leading-relaxed mb-6">"{currentCard.explanation}"</p>
+                         <p className="text-[#6B705C] dark:text-[#A5A58D] italic font-serif text-lg leading-relaxed mb-6">"{currentCard.explanation}"</p>
                          
                          <button 
                             onClick={(e) => { e.stopPropagation(); playWord(); }}
-                            className="p-3 bg-white border border-[#EAE2D6] text-[#6B705C] rounded-xl hover:bg-[#E9EDC9]"
+                            className="p-3 bg-white dark:bg-[#1C1917] border border-[#EAE2D6] dark:border-[#2C2420] text-[#6B705C] dark:text-[#A5A58D] rounded-xl hover:bg-[#E9EDC9] dark:hover:bg-[#2C2420]"
                         >
                             <Play className="w-5 h-5 fill-current" />
                         </button>
@@ -256,14 +256,14 @@ const VocabTrainer: React.FC = () => {
              <div className="grid grid-cols-2 gap-6 w-full px-4">
                 <button 
                     onClick={() => handleCardResult('again')}
-                    className="flex flex-col items-center justify-center p-5 bg-white border border-[#EAE2D6] text-[#B26B4A] rounded-3xl hover:bg-[#FEFAE0] active:scale-95 transition-all shadow-sm"
+                    className="flex flex-col items-center justify-center p-5 bg-white dark:bg-[#1C1917] border border-[#EAE2D6] dark:border-[#2C2420] text-[#B26B4A] dark:text-[#D4A373] rounded-3xl hover:bg-[#FEFAE0] dark:hover:bg-[#2C2420] active:scale-95 transition-all shadow-sm"
                 >
                     <RefreshCw className="w-6 h-6 mb-2" />
                     <span className="font-bold text-xs uppercase tracking-widest">Nochmal</span>
                 </button>
                 <button 
                     onClick={() => handleCardResult('good')}
-                    className="flex flex-col items-center justify-center p-5 bg-[#6B705C] text-white rounded-3xl hover:bg-[#585E4A] active:scale-95 transition-all shadow-xl"
+                    className="flex flex-col items-center justify-center p-5 bg-[#6B705C] dark:bg-[#D4A373] text-white dark:text-[#12100E] rounded-3xl hover:bg-[#585E4A] dark:hover:bg-[#B26B4A] active:scale-95 transition-all shadow-xl"
                 >
                     <CheckCircle className="w-6 h-6 mb-2" />
                     <span className="font-bold text-xs uppercase tracking-widest">Gelernt</span>
@@ -273,7 +273,7 @@ const VocabTrainer: React.FC = () => {
             <div className="w-full px-4">
                 <button 
                     onClick={() => setShowAnswer(true)}
-                    className="w-full bg-[#2C2420] text-[#FDFBF7] font-bold py-5 rounded-3xl shadow-2xl hover:bg-[#3D332D] active:scale-95 transition-all uppercase text-xs tracking-[0.3em]"
+                    className="w-full bg-[#2C2420] dark:bg-[#D4A373] text-[#FDFBF7] dark:text-[#12100E] font-bold py-5 rounded-3xl shadow-2xl hover:bg-[#3D332D] dark:hover:bg-[#B26B4A] active:scale-95 transition-all uppercase text-xs tracking-[0.3em]"
                 >
                     Antwort zeigen
                 </button>
