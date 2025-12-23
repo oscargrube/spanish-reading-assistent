@@ -5,6 +5,7 @@ const VOCAB_KEY = 'spanish_assistant_vocab';
 const ANALYSIS_KEY = 'spanish_assistant_last_analysis';
 const HISTORY_KEY = 'spanish_assistant_history';
 const CUSTOM_API_KEY = 'spanish_assistant_custom_api_key';
+const THEME_KEY = 'spanish_assistant_theme';
 
 export const getVocab = (): VocabItem[] => {
   try {
@@ -111,4 +112,13 @@ export const getApiKey = (): string | null => {
 
 export const removeApiKey = () => {
     localStorage.removeItem(CUSTOM_API_KEY);
+};
+
+// Theme Management
+export const getTheme = (): 'light' | 'dark' => {
+  return (localStorage.getItem(THEME_KEY) as 'light' | 'dark') || 'light';
+};
+
+export const setTheme = (theme: 'light' | 'dark') => {
+  localStorage.setItem(THEME_KEY, theme);
 };
