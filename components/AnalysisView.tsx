@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Camera, Play, Loader2, ArrowRight, CheckCircle, RotateCcw, ChevronRight, ChevronLeft, XCircle, Sparkles, Book, Key } from 'lucide-react';
 import { PageAnalysisResult, WordAnalysis, AppView } from '../types';
@@ -9,15 +8,18 @@ interface AnalysisViewProps {
     onChangeView?: (view: AppView) => void;
 }
 
+// Phasen des Lern-Flows pro Satz
+type FlowPhase = 'sentence' | 'words' | 'translation';
+
 const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView }) => {
   const [image, setImage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<PageAnalysisResult | null>(null);
   
+  // Navigation State
   const [currentSentenceIndex, setCurrentSentenceIndex] = useState(0);
-  const [currentWordIndex, setCurrentWordIndex] = useState(-1);
-  const [showTranslation, setShowTranslation] = useState(false);
-  const [sentencePhase, setSentencePhase] = useState<'initial' | 'analyzing' | 'translation'>('initial');
+  const [phase, setPhase] = useState<FlowPhase>('sentence');
+  const [currentWordIndex, setCurrentWordIndex] = useState(0);
 
   const [playingAudio, setPlayingAudio] = useState<string | null>(null);
   const [finished, setFinished] = useState(false);
@@ -31,9 +33,6 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView }) => {
       if (last && !result) {
           setResult(last.data);
           setImage(last.image);
-          if (last.data) {
-              setSentencePhase('analyzing');
-          }
       }
 
       const checkKey = () => {
@@ -46,6 +45,26 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView }) => {
       };
       checkKey();
   }, []);
+
+  const handleAnalyze = async (base64Data: string) => {
+    setLoading(true);
+    setResult(null);
+    setFinished(false);
+    setCurrentSentenceIndex(0);
+    setPhase('sentence');
+    setCurrentWordIndex(0);
+
+    try {
+      const data = await analyzeImage(base64Data);
+      setResult(data);
+      saveCurrentAnalysis(data, base64Data);
+    } catch (err: any) {
+      console.error(err);
+      setImage(null);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -61,37 +80,6 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView }) => {
     }
   };
 
-  const handleAnalyze = async (base64Data: string) => {
-    const key = getApiKey() || process.env.API_KEY;
-    if (!key) {
-        setNeedsKey(true);
-        return;
-    }
-
-    setLoading(true);
-    setResult(null);
-    setFinished(false);
-    setCurrentSentenceIndex(0);
-    setCurrentWordIndex(-1);
-    setShowTranslation(false);
-    setSentencePhase('initial');
-    setNewlySavedCount(0);
-
-    try {
-      const data = await analyzeImage(base64Data);
-      setResult(data);
-      saveCurrentAnalysis(data, base64Data);
-    } catch (err: any) {
-      if (err.message?.includes("API key")) {
-          setNeedsKey(true);
-      }
-      console.error(err);
-      setImage(null);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handlePlayAudio = async (text: string, id: string) => {
     if (playingAudio) return;
     setPlayingAudio(id);
@@ -104,381 +92,275 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView }) => {
     }
   };
 
-  const handleNextSentence = useCallback(() => {
-    if (!result) return;
+  const currentSentence = result?.sentences[currentSentenceIndex];
+  const lexicalWords = currentSentence?.words.filter(w => w.type === 'word') || [];
 
-    const currentSentence = result.sentences[currentSentenceIndex];
-    const lexicalWords = currentSentence.words.filter(w => w.type === 'word');
-    const wordsToSave = lexicalWords.map(w => ({
-        word: w.word,
-        translation: w.translation || '',
-        explanation: w.explanation || '',
-        category: w.category,
-        baseForm: w.baseForm,
-        contextSentence: currentSentence.original
-    }));
+  const handleNextPhase = useCallback(() => {
+    if (!result || !currentSentence) return;
 
-    const saved = addVocabBatch(wordsToSave);
-    setNewlySavedCount(prev => prev + saved);
-
-    if (currentSentenceIndex < result.sentences.length - 1) {
-        const nextIdx = currentSentenceIndex + 1;
-        setCurrentSentenceIndex(nextIdx);
-        setCurrentWordIndex(-1);
-        setShowTranslation(false);
-        setSentencePhase('initial');
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-    } else {
-        setFinished(true);
-        clearLastAnalysis();
-    }
-  }, [result, currentSentenceIndex]);
-
-  const handleNextStep = useCallback(() => {
-    if (!result) return;
-    const currentSentence = result.sentences[currentSentenceIndex];
-    
-    if (sentencePhase === 'initial') {
-        setSentencePhase('analyzing');
-        const firstWordIdx = currentSentence.words.findIndex(w => w.type === 'word');
-        if (firstWordIdx !== -1) {
-            setCurrentWordIndex(firstWordIdx);
+    if (phase === 'sentence') {
+        if (lexicalWords.length > 0) {
+            setPhase('words');
+            setCurrentWordIndex(0);
         } else {
-            setSentencePhase('translation');
-            setShowTranslation(true);
+            setPhase('translation');
         }
-        return;
-    }
-
-    if (sentencePhase === 'analyzing') {
-        let nextIdx = -1;
-        for (let i = currentWordIndex + 1; i < currentSentence.words.length; i++) {
-            if (currentSentence.words[i].type === 'word') {
-                nextIdx = i;
-                break;
-            }
-        }
-
-        if (nextIdx === -1) {
-            setCurrentWordIndex(-1);
-            setShowTranslation(true);
-            setSentencePhase('translation');
+    } else if (phase === 'words') {
+        if (currentWordIndex < lexicalWords.length - 1) {
+            setCurrentWordIndex(prev => prev + 1);
         } else {
-            setCurrentWordIndex(nextIdx);
+            setPhase('translation');
         }
-        return;
-    }
+    } else if (phase === 'translation') {
+        // Wortschatz speichern
+        const wordsToSave = lexicalWords.map(w => ({
+            word: w.word,
+            translation: w.translation || '',
+            explanation: w.explanation || '',
+            category: w.category,
+            baseForm: w.baseForm,
+            contextSentence: currentSentence.original
+        }));
+        const savedCount = addVocabBatch(wordsToSave);
+        setNewlySavedCount(prev => prev + savedCount);
 
-    if (sentencePhase === 'translation') {
-        handleNextSentence();
-    }
-  }, [result, currentSentenceIndex, currentWordIndex, sentencePhase, handleNextSentence]);
-
-  const handlePrevStep = () => {
-    if (!result) return;
-    const currentSentence = result.sentences[currentSentenceIndex];
-    
-    if (sentencePhase === 'translation') {
-        const lastWordIdx = [...currentSentence.words].reverse().findIndex(w => w.type === 'word');
-        if (lastWordIdx !== -1) {
-            setCurrentWordIndex(currentSentence.words.length - 1 - lastWordIdx);
-            setShowTranslation(false);
-            setSentencePhase('analyzing');
-            return;
+        if (currentSentenceIndex < result.sentences.length - 1) {
+            setCurrentSentenceIndex(prev => prev + 1);
+            setPhase('sentence');
+            setCurrentWordIndex(0);
         } else {
-             setSentencePhase('initial');
-             setShowTranslation(false);
+            setFinished(true);
+            clearLastAnalysis();
         }
     }
+  }, [result, phase, currentWordIndex, currentSentenceIndex, lexicalWords, currentSentence]);
 
-    if (sentencePhase === 'analyzing') {
-        let prevIdx = -1;
-        for (let i = currentWordIndex - 1; i >= 0; i--) {
-            if (currentSentence.words[i].type === 'word') {
-                prevIdx = i;
-                break;
-            }
-        }
-
-        if (prevIdx !== -1) {
-            setCurrentWordIndex(prevIdx);
+  const handlePrevPhase = () => {
+    if (phase === 'translation') {
+        if (lexicalWords.length > 0) {
+            setPhase('words');
+            setCurrentWordIndex(lexicalWords.length - 1);
         } else {
-            setCurrentWordIndex(-1);
-            setSentencePhase('initial');
+            setPhase('sentence');
         }
+    } else if (phase === 'words') {
+        if (currentWordIndex > 0) {
+            setCurrentWordIndex(prev => prev - 1);
+        } else {
+            setPhase('sentence');
+        }
+    } else if (phase === 'sentence' && currentSentenceIndex > 0) {
+        setCurrentSentenceIndex(prev => prev - 1);
+        setPhase('translation');
     }
   };
-
-  const handleWordClick = (index: number, word: WordAnalysis) => {
-      if (word.type === 'word') {
-          if (sentencePhase === 'initial') {
-              setSentencePhase('analyzing');
-          }
-          setCurrentWordIndex(index);
-          setShowTranslation(false);
-      }
-  }
 
   const handleReset = () => {
-      setImage(null);
-      setResult(null);
-      setFinished(false);
-      setCurrentSentenceIndex(0);
-      setCurrentWordIndex(-1);
-      setShowTranslation(false);
-      setSentencePhase('initial');
-      clearLastAnalysis();
+    setImage(null);
+    setResult(null);
+    setFinished(false);
+    clearLastAnalysis();
   };
 
+  // Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
         if (e.code === 'Space' && result && !finished) {
             e.preventDefault(); 
-            handleNextStep();
+            handleNextPhase();
         }
     };
-
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [result, finished, handleNextStep]);
+  }, [result, finished, handleNextPhase]);
 
-  if (needsKey) {
-      return (
-          <div className="flex flex-col items-center justify-center h-[60vh] gap-6 text-center animate-fade-in px-6">
-              <div className="w-20 h-20 bg-[#B26B4A]/10 rounded-3xl flex items-center justify-center text-[#B26B4A] border border-[#B26B4A]/20">
-                  <Key className="w-10 h-10" />
-              </div>
-              <div className="max-w-sm">
-                  <h2 className="text-2xl font-serif font-bold text-[#2C2420] mb-2">API Key fehlt</h2>
-                  <p className="text-[#6B705C] font-serif italic text-sm mb-6">
-                      Um die App zu nutzen, musst du in den Einstellungen deinen eigenen Gemini API Key hinterlegen.
-                  </p>
-                  <button 
-                    onClick={() => onChangeView?.(AppView.SETTINGS)} 
-                    className="w-full bg-[#2C2420] text-white font-bold py-4 px-10 rounded-2xl shadow-lg hover:bg-[#3D332D] transition-colors flex items-center justify-center gap-4 uppercase text-[10px] tracking-widest"
-                  >
-                      Zu den Einstellungen
-                  </button>
-              </div>
-          </div>
-      );
-  }
-
+  // Loading Screen
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center h-[70vh] text-center px-4">
-        <div className="relative mb-8">
-             <div className="absolute inset-0 bg-[#6B705C]/20 rounded-full animate-ping opacity-75"></div>
-            <Loader2 className="w-16 h-16 animate-spin text-[#6B705C] relative z-10" />
-        </div>
-        <h2 className="text-2xl font-serif font-bold text-[#2C2420]">Analysiere Text...</h2>
-        <p className="text-[#6B705C] mt-3 max-w-xs text-sm italic font-serif">"Ein Buch ist ein Garten, den man in der Tasche trägt."</p>
+      <div className="fixed inset-0 bg-[#FDFBF7] flex flex-col items-center justify-center text-center p-6 z-50">
+        <Loader2 className="w-12 h-12 animate-spin text-[#6B705C] mb-4" />
+        <h2 className="text-xl font-serif font-bold text-[#2C2420]">Analysiere Seite...</h2>
       </div>
     );
   }
 
+  // Key missing Screen
+  if (needsKey) {
+      return (
+          <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-6 animate-fade-in">
+              <Key className="w-12 h-12 text-[#B26B4A] mb-4" />
+              <h2 className="text-xl font-serif font-bold mb-2">API Key benötigt</h2>
+              <button onClick={() => onChangeView?.(AppView.SETTINGS)} className="mt-4 bg-[#2C2420] text-white px-8 py-3 rounded-xl uppercase text-[10px] tracking-widest font-bold">Einstellungen</button>
+          </div>
+      );
+  }
+
+  // Initial Upload Screen
   if (!result && !image) {
     return (
-      <div className="flex flex-col items-center justify-center h-[60vh] gap-6 animate-fade-in">
-        <div className="w-24 h-24 bg-white rounded-[2rem] flex items-center justify-center text-[#6B705C] border border-[#EAE2D6] shadow-md relative">
-          <Book className="w-10 h-10" />
-          <div className="absolute -top-1 -right-1 bg-[#B26B4A] p-2 rounded-xl text-white shadow-md">
-            <Camera className="w-4 h-4" />
-          </div>
-        </div>
-        <div className="text-center max-w-md px-6">
-          <h2 className="text-2xl font-serif font-bold mb-3 text-[#2C2420]">Bereit für ein neues Kapitel?</h2>
-          <p className="text-[#6B705C] text-md font-serif italic">Mache ein Foto deiner Buchseite.</p>
+      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6 animate-fade-in text-center px-6">
+        <Book className="w-16 h-16 text-[#6B705C] opacity-20" />
+        <div>
+            <h2 className="text-2xl font-serif font-bold text-[#2C2420] mb-2">Bereit zum Lesen?</h2>
+            <p className="text-[#6B705C] font-serif italic">Scanne eine Seite deines spanischen Buches.</p>
         </div>
         <input type="file" accept="image/*" capture="environment" ref={fileInputRef} className="hidden" onChange={handleFileChange} />
-        <button onClick={() => fileInputRef.current?.click()} className="bg-[#2C2420] hover:bg-[#3D332D] text-[#FDFBF7] font-bold py-4 px-10 rounded-2xl shadow-xl transition-all active:scale-95 flex items-center gap-4 uppercase text-[10px] tracking-widest">
-            Seite scannen
+        <button onClick={() => fileInputRef.current?.click()} className="bg-[#2C2420] text-white py-4 px-10 rounded-2xl shadow-xl font-bold uppercase text-[10px] tracking-widest active:scale-95 transition-transform">
+            Kamera starten
         </button>
       </div>
     );
   }
 
+  // Finished Screen
   if (finished) {
       return (
-          <div className="flex flex-col items-center justify-center h-[60vh] gap-6 text-center animate-fade-in px-4">
-              <div className="w-20 h-20 bg-[#E9EDC9] rounded-2xl flex items-center justify-center text-[#6B705C] border border-[#6B705C]/20 shadow-inner">
-                  <CheckCircle className="w-10 h-10" />
+          <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-6 animate-fade-in">
+              <div className="w-16 h-16 bg-[#E9EDC9] rounded-2xl flex items-center justify-center text-[#6B705C] mb-6">
+                  <CheckCircle className="w-8 h-8" />
               </div>
-              <div>
-                <h2 className="text-2xl font-serif font-bold text-[#2C2420] mb-2">Kapitel beendet</h2>
-                <p className="text-[#6B705C] font-serif italic text-lg">
-                    Du hast <span className="font-bold text-[#B26B4A]">{newlySavedCount} neue Worte</span> gesammelt.
-                </p>
-              </div>
-              <button onClick={handleReset} className="bg-[#6B705C] text-white font-bold py-4 px-10 rounded-2xl shadow-lg hover:bg-[#585E4A] transition-colors flex items-center gap-4 uppercase text-[10px] tracking-widest">
-                  <RotateCcw className="w-4 h-4" /> Neue Seite
+              <h2 className="text-2xl font-serif font-bold text-[#2C2420] mb-2">Seite beendet!</h2>
+              <p className="text-[#6B705C] font-serif italic mb-8">Du hast {newlySavedCount} neue Wörter gelernt.</p>
+              <button onClick={handleReset} className="bg-[#6B705C] text-white px-10 py-4 rounded-2xl font-bold uppercase text-[10px] tracking-widest">
+                  Nächste Seite
               </button>
           </div>
       )
   }
 
-  const currentSentence = result?.sentences[currentSentenceIndex];
-  const currentWord = currentSentence?.words[currentWordIndex];
-  const isMobile = window.innerWidth < 1024;
-  const hideHeader = isMobile && sentencePhase !== 'initial';
-
-  const getNextButtonLabel = () => {
-    if (sentencePhase === 'initial') return "Satz lesen";
-    if (sentencePhase === 'translation') return "Nächster Satz";
-    const nextIdxExists = currentSentence?.words.slice(currentWordIndex + 1).some(w => w.type === 'word');
-    if (nextIdxExists) return "Nächstes Wort";
-    return "Übersetzung zeigen";
-  };
-  
-
+  const currentLexicalWord = lexicalWords[currentWordIndex];
 
   return (
-    <div className="flex flex-col h-screen animate-fade-in px-4 sm:px-6 md:px-8 pb-24">
-        {!hideHeader && (
-            <div className="pt-2">
-                <div className="w-full bg-[#EAE2D6] h-1 rounded-full overflow-hidden shadow-inner">
-                    <div className="bg-[#B26B4A] h-full transition-all duration-1000 ease-in-out" style={{ width: `${((currentSentenceIndex + 1) / (result?.sentences.length || 1)) * 100}%` }}></div>
-                </div>
-                <div className="flex justify-between items-center my-4">
-                    <span className="text-[9px] font-bold text-[#6B705C] uppercase tracking-widest bg-[#E9EDC9]/50 px-3 py-1 rounded-lg border border-[#6B705C]/10">
-                        Satz {currentSentenceIndex + 1} / {result?.sentences.length}
-                    </span>
-                    <button onClick={handleReset} className="text-[#A5A58D] hover:text-[#B26B4A] transition-colors p-1.5 bg-white rounded-lg border border-[#EAE2D6] shadow-sm">
-                        <XCircle className="w-4 h-4" />
-                    </button>
+    <div className="fixed inset-0 bg-[#FDFBF7] flex flex-col overflow-hidden animate-fade-in">
+        {/* Header / Progress */}
+        <div className="px-6 pt-4 pb-2 flex justify-between items-center bg-[#FDFBF7] z-10">
+            <div className="flex flex-col gap-1 w-full max-w-[150px]">
+                <span className="text-[9px] font-bold text-[#6B705C] uppercase tracking-widest">
+                    Satz {currentSentenceIndex + 1} / {result?.sentences.length}
+                </span>
+                <div className="h-1 bg-[#EAE2D6] rounded-full overflow-hidden">
+                    <div 
+                        className="h-full bg-[#B26B4A] transition-all duration-500" 
+                        style={{ width: `${((currentSentenceIndex + 1) / (result?.sentences.length || 1)) * 100}%` }}
+                    />
                 </div>
             </div>
-        )}
-       
-                <div className="flex-1 flex flex-col gap-4 overflow-hidden">
-                    {currentSentence && (
-                        <div
-                            className={`flex flex-col gap-4 transition-opacity duration-300 flex-1 ${
-                                sentencePhase === 'analyzing'
-                                ? ''
-                                : 'justify-center'
-                            }`}
-                        >
-                            <div className="bg-white rounded-[2rem] border border-[#EAE2D6] shadow-sm flex flex-col justify-center p-6 h-[20vh] lg:h-[25vh]">                        <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
-                            <p className={`font-serif text-[#2C2420] leading-[1.6] transition-all duration-500 ${
-                                sentencePhase === 'initial' || sentencePhase === 'translation' ? 'text-2xl text-center' : 'text-base'
-                            }`}>
-                                {currentSentence.words.map((w, idx) => (
-                                    <span 
-                                        key={idx}
-                                        onClick={() => handleWordClick(idx, w)}
-                                        className={`transition-all duration-300 rounded-lg px-[2px] py-0.5 inline-block select-none ${
-                                            w.type === 'word' 
-                                            ? sentencePhase === 'analyzing' && idx === currentWordIndex
-                                                ? 'bg-[#FEFAE0] text-[#B26B4A] font-bold shadow-sm ring-1 ring-[#FAEDCD] z-10 relative' 
-                                                : 'text-[#2C2420] hover:bg-[#FDFBF7] hover:text-[#B26B4A] cursor-pointer'
-                                            : 'text-[#2C2420] font-normal cursor-default opacity-80'
-                                        }`}
-                                    >
+            <button onClick={handleReset} className="p-2 text-[#A5A58D] hover:text-[#B26B4A]">
+                <XCircle className="w-5 h-5" />
+            </button>
+        </div>
+
+        {/* Content Area - Flexbox for vertical layout */}
+        <div className="flex-grow flex flex-col px-6 py-4 overflow-hidden relative">
+            
+            {/* Phase 1: Sentence Intro */}
+            {phase === 'sentence' && (
+                <div className="flex-grow flex items-center justify-center animate-fade-in">
+                    <p className="text-2xl sm:text-3xl font-serif text-[#2C2420] leading-relaxed text-center italic">
+                        {currentSentence?.original}
+                    </p>
+                </div>
+            )}
+
+            {/* Phase 2: Word Analysis */}
+            {phase === 'words' && currentSentence && (
+                <div className="flex-grow flex flex-col gap-6 animate-fade-in h-full">
+                    {/* Sentence Widget (Top) */}
+                    <div className="bg-white p-4 rounded-2xl border border-[#EAE2D6] shadow-sm shrink-0">
+                        <p className="text-lg font-serif text-[#2C2420] leading-relaxed">
+                            {currentSentence.words.map((w, idx) => {
+                                const isCurrent = currentLexicalWord && w.word === currentLexicalWord.word;
+                                return (
+                                    <span key={idx} className={`transition-colors duration-300 ${isCurrent ? 'bg-[#FEFAE0] text-[#B26B4A] font-bold px-1 rounded' : 'opacity-40'}`}>
                                         {w.word}
                                     </span>
-                                ))}
-                            </p>
-                        </div>
-                        
-                        <div className={`mt-4 pt-4 border-t border-[#FAEDCD] transition-all duration-500 ${sentencePhase === 'translation' ? 'opacity-100' : 'opacity-0 h-0 p-0 m-0 border-0 pointer-events-none'}`}>
-                            {sentencePhase === 'translation' && (
-                                <>
-                                    <p className="text-md text-center text-[#6B705C] font-serif italic leading-relaxed">
-                                        {currentSentence.translation}
-                                    </p>
-                                    <div className="flex items-center justify-center gap-3 mt-4">
-                                        <button 
-                                            onClick={() => handlePlayAudio(currentSentence.original, `s-${currentSentenceIndex}`)} 
-                                            className={`flex items-center justify-center gap-2 p-2 rounded-xl transition-all ${playingAudio === `s-${currentSentenceIndex}` ? 'text-[#B26B4A] bg-[#FEFAE0]' : 'text-[#6B705C] bg-[#FDFBF7] border border-[#EAE2D6] hover:bg-[#E9EDC9]'}`}
-                                        >
-                                            {playingAudio === `s-${currentSentenceIndex}` ? <Loader2 className="w-4 h-4 animate-spin"/> : <Play className="w-4 h-4 fill-current" />}
-                                        </button>
-                                    </div>
-                                </>
-                            )}
-                        </div>
+                                );
+                            })}
+                        </p>
                     </div>
 
-                    <div className={`relative h-[45vh] lg:flex-1`}>
-                        <div className={`absolute inset-0 transition-opacity duration-300 ${sentencePhase === 'analyzing' ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
-                            {currentWord && currentWord.type === 'word' && (
-                                <div className="bg-[#2C2420] text-[#FDFBF7] p-8 rounded-[2rem] shadow-xl h-full flex flex-col">
-                                    <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
-                                        <div className="flex flex-col gap-1 mb-4">
-                                            <span className="text-[8px] font-bold uppercase tracking-widest text-[#FDFBF7]/40">
-                                                {currentWord.category || 'Wort'}
-                                            </span>
-                                            <h4 className="text-3xl font-serif font-bold tracking-tight text-[#FEFAE0] leading-tight">{currentWord.word}</h4>
-                                        </div>
-                                        
-                                        <div className="mb-4">
-                                            <h5 className="text-xl text-[#FDFBF7] font-serif italic mb-1">{currentWord.translation}</h5>
-                                            {currentWord.baseForm && currentWord.baseForm !== currentWord.word && (
-                                                 <p className="text-[10px] text-[#FDFBF7]/40 font-medium tracking-wide">Lemma: <span className="text-[#FDFBF7]/80 italic">{currentWord.baseForm}</span></p>
-                                            )}
-                                        </div>
-
-                                        {currentWord.explanation && (
-                                            <div className="bg-[#FDFBF7]/5 p-4 rounded-2xl border border-[#FDFBF7]/10 mb-4">
-                                                <p className="text-[#FDFBF7]/70 text-md font-serif italic leading-relaxed">"{currentWord.explanation}"</p>
-                                            </div>
-                                        )}
-                                    </div>
+                    {/* Explanation Widget (Center) */}
+                    <div className="flex-grow flex items-center justify-center overflow-hidden">
+                        {currentLexicalWord && (
+                            <div className="w-full bg-[#2C2420] text-[#FDFBF7] p-6 rounded-[2rem] shadow-xl flex flex-col animate-fade-in overflow-hidden max-h-full">
+                                <div className="overflow-y-auto custom-scrollbar">
+                                    <span className="text-[8px] font-bold uppercase tracking-[0.2em] text-[#B26B4A] mb-2 block">
+                                        {currentLexicalWord.category || 'Vokabel'}
+                                    </span>
+                                    <h3 className="text-3xl font-serif font-bold text-[#FEFAE0] mb-2">{currentLexicalWord.word}</h3>
+                                    <p className="text-xl font-serif italic text-[#FDFBF7]/90 mb-4">{currentLexicalWord.translation}</p>
                                     
-                                    <div className="flex items-center justify-between mt-4 pt-4 border-t border-[#FDFBF7]/10">
-                                        <button 
-                                            onClick={() => handlePlayAudio(currentWord.word, `w-${currentSentenceIndex}-${currentWordIndex}`)} 
-                                            className="w-12 h-12 flex items-center justify-center bg-[#B26B4A] text-white rounded-xl hover:bg-[#9E5A3B] shadow-md transition-all active:scale-90"
-                                        >
-                                            {playingAudio === `w-${currentSentenceIndex}-${currentWordIndex}` ? <Loader2 className="w-5 h-5 animate-spin"/> : <Play className="w-5 h-5 fill-current" />}
-                                        </button>
-                                        {isVocabSaved(currentWord.word) && (
-                                            <div className="flex items-center gap-1.5 bg-[#E9EDC9]/10 px-3 py-1.5 rounded-lg border border-[#E9EDC9]/20">
-                                                <CheckCircle className="w-3 h-3 text-[#E9EDC9]" />
-                                                <span className="text-[8px] font-bold uppercase tracking-widest text-[#E9EDC9]">Gemerkt</span>
-                                            </div>
-                                        )}
-                                    </div>
+                                    {currentLexicalWord.explanation && (
+                                        <div className="bg-white/5 p-4 rounded-xl border border-white/10 mb-4">
+                                            <p className="text-sm font-serif italic text-[#FDFBF7]/70 leading-relaxed">
+                                                {currentLexicalWord.explanation}
+                                            </p>
+                                        </div>
+                                    )}
                                 </div>
-                            )}
-                        </div>
-                        <div className={`absolute inset-0 transition-opacity duration-300 ${sentencePhase !== 'analyzing' ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
-                            <div className="h-full flex flex-col items-center justify-center border-2 border-dashed border-[#EAE2D6] rounded-[2rem] p-6 bg-white/50">
-                                <Sparkles className="w-8 h-8 text-[#EAE2D6] mb-3" />
-                                <p className="text-[#A5A58D] text-md font-serif italic text-center leading-relaxed">
-                                    {sentencePhase === 'translation' ? "Satz verstanden?" : "Gehe die Worte durch."}
-                                </p>
+                                <div className="mt-auto pt-4 flex justify-between items-center border-t border-white/10">
+                                    <button 
+                                        onClick={() => handlePlayAudio(currentLexicalWord.word, `w-${currentSentenceIndex}-${currentWordIndex}`)}
+                                        className="w-10 h-10 bg-[#B26B4A] rounded-xl flex items-center justify-center"
+                                    >
+                                        {playingAudio === `w-${currentSentenceIndex}-${currentWordIndex}` ? <Loader2 className="w-4 h-4 animate-spin text-white"/> : <Play className="w-4 h-4 fill-white text-white" />}
+                                    </button>
+                                    {isVocabSaved(currentLexicalWord.word) && (
+                                        <span className="text-[8px] font-bold uppercase tracking-widest text-[#E9EDC9]">Gemerkt</span>
+                                    )}
+                                </div>
                             </div>
-                        </div>
+                        )}
                     </div>
+                </div>
+            )}
+
+            {/* Phase 3: Translation */}
+            {phase === 'translation' && currentSentence && (
+                <div className="flex-grow flex flex-col justify-center gap-8 animate-fade-in">
+                    <div className="text-center">
+                        <span className="text-[8px] font-bold text-[#6B705C] uppercase tracking-widest mb-2 block">Original</span>
+                        <p className="text-2xl font-serif text-[#2C2420] leading-relaxed italic">
+                            {currentSentence.original}
+                        </p>
+                    </div>
+                    <div className="w-12 h-[1px] bg-[#EAE2D6] mx-auto opacity-50" />
+                    <div className="text-center">
+                        <span className="text-[8px] font-bold text-[#B26B4A] uppercase tracking-widest mb-2 block">Übersetzung</span>
+                        <p className="text-xl font-serif text-[#6B705C] leading-relaxed">
+                            {currentSentence.translation}
+                        </p>
+                    </div>
+                    <button 
+                        onClick={() => handlePlayAudio(currentSentence.original, `s-${currentSentenceIndex}`)}
+                        className="mx-auto w-12 h-12 bg-[#FDFBF7] border border-[#EAE2D6] rounded-full flex items-center justify-center text-[#6B705C] hover:bg-[#FEFAE0]"
+                    >
+                         {playingAudio === `s-${currentSentenceIndex}` ? <Loader2 className="w-4 h-4 animate-spin"/> : <Play className="w-4 h-4 fill-current" />}
+                    </button>
                 </div>
             )}
         </div>
 
-        <div className="fixed bottom-0 left-0 right-0 w-full bg-white z-20 shadow-t">
-            <div className="max-w-lg mx-auto flex items-stretch gap-3 p-4">
+        {/* Fixed Navigation Buttons (Bottom) */}
+        <div className="px-6 py-6 bg-[#FDFBF7] border-t border-[#EAE2D6] shrink-0 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+            <div className="flex gap-3 max-w-lg mx-auto">
                 <button 
-                    onClick={handlePrevStep} 
-                    disabled={sentencePhase === 'initial'} 
-                    className="w-12 h-12 bg-white border border-[#EAE2D6] text-[#A5A58D] rounded-xl disabled:opacity-20 hover:bg-[#FDFBF7] hover:text-[#B26B4A] transition-all flex items-center justify-center shadow-md shrink-0"
+                    onClick={handlePrevPhase}
+                    disabled={phase === 'sentence' && currentSentenceIndex === 0}
+                    className="w-14 h-14 flex items-center justify-center bg-white border border-[#EAE2D6] rounded-2xl text-[#6B705C] disabled:opacity-20 active:scale-95 transition-all shadow-sm"
                 >
-                    <ChevronLeft className="w-5 h-5" />
+                    <ChevronLeft className="w-6 h-6" />
                 </button>
-                
                 <button 
-                    onClick={handleNextStep} 
-                    className={`flex-grow h-12 rounded-xl shadow-lg active:scale-[0.98] transition-all duration-300 flex items-center justify-center gap-3 font-serif font-bold text-base ${
-                        sentencePhase === 'translation' 
-                        ? 'bg-[#B26B4A] text-white hover:bg-[#9E5A3B]' 
-                        : 'bg-[#2C2420] text-[#FDFBF7] hover:bg-[#3D332D]'
+                    onClick={handleNextPhase}
+                    className={`flex-grow h-14 rounded-2xl flex items-center justify-center gap-3 font-bold text-[10px] uppercase tracking-[0.2em] shadow-lg active:scale-95 transition-all ${
+                        phase === 'translation' ? 'bg-[#B26B4A] text-white' : 'bg-[#2C2420] text-white'
                     }`}
                 >
-                    <span>{getNextButtonLabel()}</span>
-                    {sentencePhase === 'translation' ? <ArrowRight className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                    {phase === 'sentence' ? 'Wörter analysieren' : phase === 'words' && currentWordIndex < lexicalWords.length - 1 ? 'Nächstes Wort' : phase === 'words' ? 'Übersetzung' : 'Nächster Satz'}
+                    <ChevronRight className="w-4 h-4" />
                 </button>
             </div>
-            <p className="text-[8px] text-center text-[#A5A58D] mt-3 font-bold uppercase tracking-widest opacity-40 hidden lg:block">Leertaste = Weiter</p>
         </div>
     </div>
   );
