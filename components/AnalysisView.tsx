@@ -1,15 +1,13 @@
-
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Camera, Play, Loader2, ArrowRight, CheckCircle, RotateCcw, ChevronRight, ChevronLeft, XCircle, Sparkles, Book, Key } from 'lucide-react';
 import { PageAnalysisResult, WordAnalysis, AppView } from '../types';
 import { analyzeImage, generateSpeech } from '../services/geminiService';
-import { addVocabBatch, isVocabSaved, saveCurrentAnalysis, getLastAnalysis, clearLastAnalysis, getApiKey } from '../services/storageService';
+import { addVocabBatch, isVocabSaved, saveCurrentAnalysis, getLastAnalysis, clearLastAnalysis } from '../services/storageService';
 
 interface AnalysisViewProps {
     onChangeView?: (view: AppView) => void;
 }
 
-// Phasen des Lern-Flows pro Satz
 type FlowPhase = 'sentence' | 'words' | 'translation';
 
 const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView }) => {
@@ -17,7 +15,6 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView }) => {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<PageAnalysisResult | null>(null);
   
-  // Navigation State
   const [currentSentenceIndex, setCurrentSentenceIndex] = useState(0);
   const [phase, setPhase] = useState<FlowPhase>('sentence');
   const [currentWordIndex, setCurrentWordIndex] = useState(0);
@@ -25,7 +22,7 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView }) => {
   const [playingAudio, setPlayingAudio] = useState<string | null>(null);
   const [finished, setFinished] = useState(false);
   const [newlySavedCount, setNewlySavedCount] = useState(0);
-  const [needsKey, setNeedsKey] = useState(false);
+  const [savedWords, setSavedWords] = useState<Set<string>>(new Set());
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -35,17 +32,24 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView }) => {
           setResult(last.data);
           setImage(last.image);
       }
-
-      const checkKey = () => {
-          const key = getApiKey() || (process.env.API_KEY);
-          if (!key) {
-              setNeedsKey(true);
-          } else {
-              setNeedsKey(false);
-          }
-      };
-      checkKey();
   }, []);
+
+  // Update saved words state
+  useEffect(() => {
+      const checkSaved = async () => {
+          if (!result) return;
+          const currentWords = new Set<string>();
+          for (const s of result.sentences) {
+              for (const w of s.words) {
+                  if (w.type === 'word' && await isVocabSaved(w.word)) {
+                      currentWords.add(w.word.toLowerCase());
+                  }
+              }
+          }
+          setSavedWords(currentWords);
+      };
+      checkSaved();
+  }, [result]);
 
   const handleAnalyze = async (base64Data: string) => {
     setLoading(true);
@@ -96,7 +100,7 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView }) => {
   const currentSentence = result?.sentences[currentSentenceIndex];
   const lexicalWords = currentSentence?.words.filter(w => w.type === 'word') || [];
 
-  const handleNextPhase = useCallback(() => {
+  const handleNextPhase = useCallback(async () => {
     if (!result || !currentSentence) return;
 
     if (phase === 'sentence') {
@@ -113,7 +117,7 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView }) => {
             setPhase('translation');
         }
     } else if (phase === 'translation') {
-        // Wortschatz speichern
+        setLoading(true); // Short sync loading
         const wordsToSave = lexicalWords.map(w => ({
             word: w.word,
             translation: w.translation || '',
@@ -122,8 +126,10 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView }) => {
             baseForm: w.baseForm,
             contextSentence: currentSentence.original
         }));
-        const savedCount = addVocabBatch(wordsToSave);
+        
+        const savedCount = await addVocabBatch(wordsToSave);
         setNewlySavedCount(prev => prev + savedCount);
+        setLoading(false);
 
         if (currentSentenceIndex < result.sentences.length - 1) {
             setCurrentSentenceIndex(prev => prev + 1);
@@ -163,7 +169,6 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView }) => {
     clearLastAnalysis();
   };
 
-  // Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
         if (e.code === 'Space' && result && !finished) {
@@ -175,28 +180,15 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView }) => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [result, finished, handleNextPhase]);
 
-  // Loading Screen
   if (loading) {
     return (
       <div className="fixed inset-0 bg-[#FDFBF7] dark:bg-[#12100E] flex flex-col items-center justify-center text-center p-6 z-50">
         <Loader2 className="w-12 h-12 animate-spin text-[#6B705C] dark:text-[#D4A373] mb-4" />
-        <h2 className="text-xl font-serif font-bold text-[#2C2420] dark:text-[#FDFBF7]">Analysiere Seite...</h2>
+        <h2 className="text-xl font-serif font-bold text-[#2C2420] dark:text-[#FDFBF7]">Verarbeite...</h2>
       </div>
     );
   }
 
-  // Key missing Screen
-  if (needsKey) {
-      return (
-          <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-6 animate-fade-in">
-              <Key className="w-12 h-12 text-[#B26B4A] dark:text-[#D4A373] mb-4" />
-              <h2 className="text-xl font-serif font-bold mb-2 dark:text-[#FDFBF7]">API Key benötigt</h2>
-              <button onClick={() => onChangeView?.(AppView.SETTINGS)} className="mt-4 bg-[#2C2420] dark:bg-[#D4A373] text-white dark:text-[#12100E] px-8 py-3 rounded-xl uppercase text-[10px] tracking-widest font-bold">Einstellungen</button>
-          </div>
-      );
-  }
-
-  // Initial Upload Screen
   if (!result && !image) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6 animate-fade-in text-center px-6">
@@ -213,7 +205,6 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView }) => {
     );
   }
 
-  // Finished Screen
   if (finished) {
       return (
           <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-6 animate-fade-in">
@@ -233,7 +224,6 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView }) => {
 
   return (
     <div className="fixed inset-0 bg-[#FDFBF7] dark:bg-[#12100E] flex flex-col overflow-hidden animate-fade-in transition-colors">
-        {/* Header / Progress */}
         <div className="px-6 pt-4 pb-2 flex justify-between items-center bg-[#FDFBF7] dark:bg-[#12100E] z-10 transition-colors">
             <div className="flex flex-col gap-1 w-full max-w-[150px]">
                 <span className="text-[9px] font-bold text-[#6B705C] dark:text-[#A5A58D] uppercase tracking-widest">
@@ -251,10 +241,7 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView }) => {
             </button>
         </div>
 
-        {/* Content Area */}
         <div className="flex-grow flex flex-col px-6 py-4 overflow-hidden relative">
-            
-            {/* Phase 1: Sentence Intro */}
             {phase === 'sentence' && (
                 <div className="flex-grow flex items-center justify-center animate-fade-in">
                     <p className="text-2xl sm:text-3xl font-serif text-[#2C2420] dark:text-[#FDFBF7] leading-relaxed text-center italic">
@@ -263,10 +250,8 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView }) => {
                 </div>
             )}
 
-            {/* Phase 2: Word Analysis */}
             {phase === 'words' && currentSentence && (
                 <div className="flex-grow flex flex-col gap-6 animate-fade-in h-full">
-                    {/* Sentence Widget (Top) */}
                     <div className="bg-white dark:bg-[#1C1917] p-4 rounded-2xl border border-[#EAE2D6] dark:border-[#2C2420] shadow-sm shrink-0">
                         <p className="text-lg font-serif text-[#2C2420] dark:text-[#FDFBF7] leading-relaxed">
                             {currentSentence.words.map((w, idx) => {
@@ -280,7 +265,6 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView }) => {
                         </p>
                     </div>
 
-                    {/* Explanation Widget (Center) */}
                     <div className="flex-grow flex items-center justify-center overflow-hidden">
                         {currentLexicalWord && (
                             <div className="w-full bg-[#2C2420] dark:bg-[#1C1917] text-[#FDFBF7] p-6 rounded-[2rem] shadow-xl border border-transparent dark:border-[#2C2420] flex flex-col animate-fade-in overflow-hidden max-h-full">
@@ -306,7 +290,7 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView }) => {
                                     >
                                         {playingAudio === `w-${currentSentenceIndex}-${currentWordIndex}` ? <Loader2 className="w-4 h-4 animate-spin text-white"/> : <Play className="w-4 h-4 fill-white text-white dark:text-[#12100E] dark:fill-[#12100E]" />}
                                     </button>
-                                    {isVocabSaved(currentLexicalWord.word) && (
+                                    {savedWords.has(currentLexicalWord.word.toLowerCase()) && (
                                         <span className="text-[8px] font-bold uppercase tracking-widest text-[#E9EDC9]">Gemerkt</span>
                                     )}
                                 </div>
@@ -316,7 +300,6 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView }) => {
                 </div>
             )}
 
-            {/* Phase 3: Translation */}
             {phase === 'translation' && currentSentence && (
                 <div className="flex-grow flex flex-col justify-center gap-8 animate-fade-in">
                     <div className="text-center">
@@ -334,7 +317,7 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView }) => {
                     </div>
                     <button 
                         onClick={() => handlePlayAudio(currentSentence.original, `s-${currentSentenceIndex}`)}
-                        className="mx-auto w-12 h-12 bg-[#FDFBF7] dark:bg-[#1C1917] border border-[#EAE2D6] dark:border-[#2C2420] rounded-full flex items-center justify-center text-[#6B705C] dark:text-[#D4A373] hover:bg-[#FEFAE0] dark:hover:bg-[#2C2420] transition-colors"
+                        className="mx-auto w-12 h-12 bg-[#FDFBF7] dark:bg-[#1C1917] border border-[#EAE2D6] dark:border-[#2C2420] rounded-full flex items-center justify-center text-[#6B705C] dark:text-[#A5A58D] hover:bg-[#FEFAE0] dark:hover:bg-[#2C2420] transition-colors"
                     >
                          {playingAudio === `s-${currentSentenceIndex}` ? <Loader2 className="w-4 h-4 animate-spin"/> : <Play className="w-4 h-4 fill-current" />}
                     </button>
@@ -342,7 +325,6 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView }) => {
             )}
         </div>
 
-        {/* Fixed Navigation Buttons */}
         <div className="px-6 py-6 bg-[#FDFBF7] dark:bg-[#12100E] border-t border-[#EAE2D6] dark:border-[#2C2420] shrink-0 pb-[max(1.5rem,env(safe-area-inset-bottom))] transition-colors">
             <div className="flex gap-3 max-w-lg mx-auto">
                 <button 

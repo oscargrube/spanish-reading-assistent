@@ -1,28 +1,32 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { VocabItem, WordCategory } from '../types';
-import { getVocab, removeVocab, toggleMastered } from '../services/storageService';
-import { Trash2, CheckCircle, GraduationCap, RefreshCw, Layers, Play, Download } from 'lucide-react';
+import { getVocab, removeVocab, toggleMastered, importVocabFromJson } from '../services/storageService';
+import { Trash2, CheckCircle, GraduationCap, RefreshCw, Layers, Play, Download, Upload, Loader2, FileJson } from 'lucide-react';
 import { generateSpeech } from '../services/geminiService';
 
 const VocabTrainer: React.FC = () => {
   const [vocabList, setVocabList] = useState<VocabItem[]>([]);
+  const [loading, setLoading] = useState(true);
   const [mode, setMode] = useState<'list' | 'train'>('list');
   const [selectedCategory, setSelectedCategory] = useState<WordCategory | 'all'>('all');
   
-  // Trainer State
   const [sessionQueue, setSessionQueue] = useState<VocabItem[]>([]);
   const [currentCardIndex, setCurrentCardIndex] = useState(0);
-  const [isFlipped, setIsFlipped] = useState(false);
   const [showAnswer, setShowAnswer] = useState(false);
+  const [importing, setImporting] = useState(false);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     loadVocab();
   }, []);
 
-  const loadVocab = () => {
-    const all = getVocab();
+  const loadVocab = async () => {
+    setLoading(true);
+    const all = await getVocab();
     setVocabList(all.sort((a, b) => b.addedAt - a.addedAt));
+    setLoading(false);
   };
 
   const getFilteredList = () => {
@@ -33,21 +37,50 @@ const VocabTrainer: React.FC = () => {
     });
   }
 
-  const handleDelete = (id: string) => {
-    removeVocab(id);
+  const handleDelete = async (id: string) => {
+    await removeVocab(id);
     loadVocab();
   };
 
   const handleExport = () => {
     const dataStr = JSON.stringify(vocabList, null, 2);
     const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
-    
     const exportFileDefaultName = `spanish-vocab-${new Date().toISOString().split('T')[0]}.json`;
-    
     const linkElement = document.createElement('a');
     linkElement.setAttribute('href', dataUri);
     linkElement.setAttribute('download', exportFileDefaultName);
     linkElement.click();
+  };
+
+  const handleImportClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setImporting(true);
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const json = JSON.parse(event.target?.result as string);
+        if (Array.isArray(json)) {
+          const imported = await importVocabFromJson(json);
+          alert(`${imported} neue Vokabeln importiert!`);
+          await loadVocab();
+        } else {
+          alert("Ungültiges JSON-Format. Erwartet wird ein Array von Vokabeln.");
+        }
+      } catch (err) {
+        console.error("Import failed:", err);
+        alert("Import fehlgeschlagen. Bitte überprüfen Sie die Datei.");
+      } finally {
+        setImporting(false);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      }
+    };
+    reader.readAsText(file);
   };
 
   const startSession = () => {
@@ -59,33 +92,27 @@ const VocabTrainer: React.FC = () => {
       const shuffled = [...filtered].sort(() => Math.random() - 0.5);
       setSessionQueue(shuffled);
       setCurrentCardIndex(0);
-      setIsFlipped(false);
       setShowAnswer(false);
       setMode('train');
   }
 
-  const handleCardResult = (result: 'again' | 'good') => {
+  const handleCardResult = async (result: 'again' | 'good') => {
       const currentItem = sessionQueue[currentCardIndex];
       
       if (result === 'good') {
-          toggleMastered(currentItem.id);
+          await toggleMastered(currentItem.id);
       } else {
           setSessionQueue(prev => [...prev, currentItem]);
       }
 
-      setIsFlipped(false);
       setShowAnswer(false);
       
       if (currentCardIndex < sessionQueue.length - 1) {
           setCurrentCardIndex(prev => prev + 1);
       } else {
-          if (currentCardIndex + 1 < sessionQueue.length) {
-              setCurrentCardIndex(prev => prev + 1);
-          } else {
-             alert("Sitzung abgeschlossen!");
-             setMode('list');
-             loadVocab();
-          }
+         alert("Sitzung abgeschlossen!");
+         setMode('list');
+         loadVocab();
       }
   };
 
@@ -115,14 +142,31 @@ const VocabTrainer: React.FC = () => {
       </div>
   );
 
-  if (vocabList.length === 0) {
+  if (loading) {
+      return (
+          <div className="flex flex-col items-center justify-center h-[50vh] animate-fade-in">
+              <Loader2 className="w-10 h-10 animate-spin text-[#B26B4A] dark:text-[#D4A373]" />
+          </div>
+      );
+  }
+
+  if (vocabList.length === 0 && !importing) {
     return (
       <div className="flex flex-col items-center justify-center h-[50vh] text-center p-8 animate-fade-in">
         <div className="w-20 h-20 bg-white dark:bg-[#1C1917] rounded-full flex items-center justify-center mb-6 text-[#A5A58D] border border-[#EAE2D6] dark:border-[#2C2420]">
             <GraduationCap className="w-10 h-10" />
         </div>
         <h3 className="text-2xl font-serif font-bold text-[#2C2420] dark:text-[#FDFBF7]">Deine Sammlung ist leer</h3>
-        <p className="text-[#6B705C] dark:text-[#A5A58D] mt-3 font-serif italic">Schlage ein Buch auf und fange an zu sammeln.</p>
+        <p className="text-[#6B705C] dark:text-[#A5A58D] mt-3 font-serif italic mb-6">Schlage ein Buch auf oder importiere eine bestehende Sammlung.</p>
+        
+        <input type="file" accept=".json" ref={fileInputRef} className="hidden" onChange={handleFileImport} />
+        <button 
+            onClick={handleImportClick}
+            className="bg-white dark:bg-[#1C1917] text-[#6B705C] dark:text-[#A5A58D] border border-[#EAE2D6] dark:border-[#2C2420] px-6 py-3 rounded-2xl flex items-center gap-2 font-bold uppercase text-[10px] tracking-widest shadow-sm hover:bg-[#FDFBF7] transition-all"
+        >
+            <Upload className="w-4 h-4" />
+            JSON Importieren
+        </button>
       </div>
     );
   }
@@ -142,6 +186,15 @@ const VocabTrainer: React.FC = () => {
                         <p className="text-[#FDFBF7]/60 text-sm font-serif italic tracking-wide">Wörter warten auf dich.</p>
                     </div>
                     <div className="flex gap-2">
+                        <input type="file" accept=".json" ref={fileInputRef} className="hidden" onChange={handleFileImport} />
+                        <button 
+                            onClick={handleImportClick}
+                            disabled={importing}
+                            className="p-3 bg-white/10 hover:bg-white/20 rounded-2xl text-[#FDFBF7] transition-all border border-white/10"
+                            title="Vokabeln importieren"
+                        >
+                            {importing ? <Loader2 className="w-5 h-5 animate-spin" /> : <Upload className="w-5 h-5" />}
+                        </button>
                         <button 
                             onClick={handleExport}
                             className="p-3 bg-white/10 hover:bg-white/20 rounded-2xl text-[#FDFBF7] transition-all border border-white/10"
@@ -149,7 +202,7 @@ const VocabTrainer: React.FC = () => {
                         >
                             <Download className="w-5 h-5" />
                         </button>
-                        <Layers className="w-8 h-8 text-[#B26B4A] dark:text-[#D4A373]" />
+                        <Layers className="w-8 h-8 text-[#B26B4A] dark:text-[#D4A373] ml-2" />
                     </div>
                 </div>
                 
@@ -205,7 +258,6 @@ const VocabTrainer: React.FC = () => {
             </span>
         </div>
 
-        {/* Card */}
         <div 
             className="w-full aspect-[4/5] perspective-1000 cursor-pointer mb-10"
             onClick={() => !showAnswer && setShowAnswer(true)}

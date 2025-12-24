@@ -4,20 +4,41 @@ import Layout from './components/Layout';
 import AnalysisView from './components/AnalysisView';
 import VocabTrainer from './components/VocabTrainer';
 import SettingsView from './components/SettingsView';
+import AuthView from './components/AuthView';
+import ApiKeyModal from './components/ApiKeyModal';
 import { AppView, PersistedAnalysis } from './types';
-import { BookOpen, Camera, Bookmark, Sparkles, History, ArrowRight, Settings } from 'lucide-react';
-import { getLastAnalysis, getVocab, getTheme, setTheme as saveTheme } from './services/storageService';
+import { BookOpen, Camera, Bookmark, Sparkles, History, ArrowRight, Settings, Loader2 } from 'lucide-react';
+import { getLastAnalysis, getVocab, getTheme, setTheme as saveTheme, getSessionApiKey } from './services/storageService';
+import { auth } from './services/firebase';
+import { onAuthStateChanged, User } from 'firebase/auth';
 
 export default function App() {
   const [currentView, setCurrentView] = useState<AppView>(AppView.HOME);
   const [lastScan, setLastScan] = useState<PersistedAnalysis | null>(null);
   const [vocabCount, setVocabCount] = useState(0);
   const [theme, setTheme] = useState<'light' | 'dark'>(getTheme());
+  const [user, setUser] = useState<User | null>(null);
+  const [isGuest, setIsGuest] = useState<boolean>(localStorage.getItem('spanish_assistant_is_guest') === 'true');
+  const [authLoading, setAuthLoading] = useState(true);
+  const [showApiKeyModal, setShowApiKeyModal] = useState(false);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      if (currentUser) {
+        setIsGuest(false);
+        localStorage.removeItem('spanish_assistant_is_guest');
+        checkApiKey();
+      }
+      setAuthLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
 
   useEffect(() => {
     setLastScan(getLastAnalysis());
-    setVocabCount(getVocab().length);
-  }, [currentView]);
+    getVocab().then(vocab => setVocabCount(vocab.length));
+  }, [currentView, user, isGuest]);
 
   useEffect(() => {
     if (theme === 'dark') {
@@ -28,7 +49,38 @@ export default function App() {
     saveTheme(theme);
   }, [theme]);
 
+  const checkApiKey = () => {
+    const key = getSessionApiKey();
+    if (!key) {
+      setShowApiKeyModal(true);
+    }
+  };
+
   const toggleTheme = () => setTheme(prev => prev === 'light' ? 'dark' : 'light');
+
+  const handleGuestLogin = () => {
+    setIsGuest(true);
+    localStorage.setItem('spanish_assistant_is_guest', 'true');
+    checkApiKey();
+  };
+
+  const handleLogoutGuest = () => {
+    setIsGuest(false);
+    localStorage.removeItem('spanish_assistant_is_guest');
+  };
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-[#FDFBF7] dark:bg-[#12100E]">
+        <Loader2 className="w-12 h-12 animate-spin text-[#B26B4A] dark:text-[#D4A373] mb-4" />
+        <p className="font-serif italic text-[#6B705C] dark:text-[#A5A58D]">Wird geladen...</p>
+      </div>
+    );
+  }
+
+  if (!user && !isGuest) {
+    return <AuthView onGuestLogin={handleGuestLogin} />;
+  }
 
   const renderContent = () => {
     switch (currentView) {
@@ -48,11 +100,15 @@ export default function App() {
                 <div className="relative z-10">
                     <div className="flex items-center gap-2 mb-3">
                         <Sparkles className="text-[#FEFAE0] dark:text-[#D4A373] w-5 h-5" />
-                        <span className="text-[9px] font-bold uppercase tracking-widest text-[#FEFAE0]/80 dark:text-[#D4A373]/80">Bienvenido</span>
+                        <span className="text-[9px] font-bold uppercase tracking-widest text-[#FEFAE0]/80 dark:text-[#D4A373]/80">
+                          {isGuest ? 'Bienvenido, Invitado' : `Bienvenido, ${user?.displayName || 'Amigo'}`}
+                        </span>
                     </div>
                     <h2 className="text-4xl font-serif font-bold mb-4 tracking-tight">Hola amigo.</h2>
                     <p className="text-[#FDFBF7]/70 text-md font-serif italic leading-relaxed mb-6 max-w-sm">
-                        Dein Fortschritt wird automatisch lokal gespeichert.
+                        {isGuest 
+                          ? 'Deine Vokabeln werden lokal im Browser gespeichert. Exportiere sie regelmäßig!' 
+                          : 'Dein Fortschritt wird sicher in der Cloud synchronisiert.'}
                     </p>
                     
                     <div className="flex flex-wrap gap-3">
@@ -122,7 +178,7 @@ export default function App() {
                         <Settings className="w-5 h-5 text-[#6B705C] dark:text-[#A5A58D]" />
                     </div>
                     <div>
-                        <p className="text-sm font-bold text-[#2C2420] dark:text-[#FDFBF7]">API Key & Einstellungen</p>
+                        <p className="text-sm font-bold text-[#2C2420] dark:text-[#FDFBF7]">Einstellungen</p>
                         <p className="text-xs text-[#6B705C] dark:text-[#A5A58D] italic">Verwalte deinen Zugang und lerne mehr.</p>
                     </div>
                 </div>
@@ -134,8 +190,16 @@ export default function App() {
   };
 
   return (
-    <Layout currentView={currentView} onChangeView={setCurrentView} theme={theme} onToggleTheme={toggleTheme}>
+    <Layout 
+      currentView={currentView} 
+      onChangeView={setCurrentView} 
+      theme={theme} 
+      onToggleTheme={toggleTheme}
+      isGuest={isGuest}
+      onLogoutGuest={handleLogoutGuest}
+    >
       {renderContent()}
+      {showApiKeyModal && <ApiKeyModal onClose={() => setShowApiKeyModal(false)} />}
     </Layout>
   );
 }

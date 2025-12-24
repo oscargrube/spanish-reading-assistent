@@ -1,6 +1,7 @@
-import { GoogleGenAI, Type, Schema, Modality } from "@google/genai";
+
+import { GoogleGenAI, Type, Modality } from "@google/genai";
 import { PageAnalysisResult } from "../types";
-import { getApiKey } from "./storageService";
+import { getSessionApiKey } from "./storageService";
 
 // Helper to encode string to base64
 function encode(bytes: Uint8Array) {
@@ -43,7 +44,7 @@ async function decodeAudioData(
   return buffer;
 }
 
-const analysisSchema: Schema = {
+const analysisSchema = {
   type: Type.OBJECT,
   properties: {
     sentences: {
@@ -80,19 +81,15 @@ const analysisSchema: Schema = {
   required: ["sentences"]
 };
 
-// Always create a fresh instance to ensure we use the most up-to-date API Key
+// Modified: Check sessionStorage first, then process.env.API_KEY
 const getAI = () => {
-    // Sicherstellen, dass process.env existiert, bevor darauf zugegriffen wird
-    let envKey: string | undefined;
-    try {
-        envKey = (typeof process !== 'undefined' && process.env) ? process.env.API_KEY : undefined;
-    } catch (e) {
-        envKey = undefined;
-    }
-
-    const apiKey = getApiKey() || envKey;
+    const sessionKey = getSessionApiKey();
+    const envKey = process.env.API_KEY;
+    
+    const apiKey = sessionKey || envKey;
+    
     if (!apiKey) {
-        throw new Error("API Key is missing. Please set your API key in settings.");
+        throw new Error("Kein API Key gefunden. Bitte geben Sie einen in den Einstellungen ein.");
     }
     return new GoogleGenAI({ apiKey });
 }

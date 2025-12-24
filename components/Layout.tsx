@@ -1,7 +1,9 @@
 
 import React from 'react';
-import { Book, Camera, Bookmark, Sparkles, Settings, Moon, Sun } from 'lucide-react';
+import { Book, Camera, Bookmark, Sparkles, Settings, Moon, Sun, LogOut, User } from 'lucide-react';
 import { AppView } from '../types';
+import { auth } from '../services/firebase';
+import { signOut } from 'firebase/auth';
 
 interface LayoutProps {
   currentView: AppView;
@@ -9,9 +11,35 @@ interface LayoutProps {
   children: React.ReactNode;
   theme?: 'light' | 'dark';
   onToggleTheme?: () => void;
+  isGuest?: boolean;
+  onLogoutGuest?: () => void;
 }
 
-const Layout: React.FC<LayoutProps> = ({ currentView, onChangeView, children, theme, onToggleTheme }) => {
+const Layout: React.FC<LayoutProps> = ({ 
+  currentView, 
+  onChangeView, 
+  children, 
+  theme, 
+  onToggleTheme, 
+  isGuest,
+  onLogoutGuest 
+}) => {
+  const handleLogout = async () => {
+    if (window.confirm("Möchten Sie sich wirklich abmelden?")) {
+      if (isGuest) {
+        onLogoutGuest?.();
+      } else {
+        try {
+          await signOut(auth);
+        } catch (err) {
+          console.error("Logout failed:", err);
+        }
+      }
+    }
+  };
+
+  const userName = isGuest ? "Gast" : (auth.currentUser?.displayName || auth.currentUser?.email?.split('@')[0]);
+
   return (
     <div className="min-h-screen flex flex-col bg-[#FDFBF7] dark:bg-[#12100E]">
       <header className="bg-[#FDFBF7]/90 dark:bg-[#12100E]/90 backdrop-blur-xl border-b border-[#EAE2D6] dark:border-[#2C2420] sticky top-0 z-50 transition-colors">
@@ -26,7 +54,7 @@ const Layout: React.FC<LayoutProps> = ({ currentView, onChangeView, children, th
             </div>
           </div>
           
-          <nav className="flex items-center bg-[#2C2420]/5 dark:bg-white/5 p-1.5 rounded-2xl border border-[#2C2420]/5 dark:border-white/5">
+          <nav className="flex items-center bg-[#2C2420]/5 dark:bg-white/5 p-1.5 rounded-2xl border border-[#2C2420]/5 dark:border-white/5 mx-2">
             <button 
                 onClick={() => onChangeView(AppView.HOME)}
                 className={`flex items-center gap-2 py-2 px-4 rounded-xl transition-all duration-300 ${currentView === AppView.HOME ? 'bg-white dark:bg-[#2C2420] text-[#2C2420] dark:text-[#FDFBF7] shadow-sm' : 'text-[#6B705C] dark:text-[#A5A58D] hover:text-[#2C2420] dark:hover:text-[#FDFBF7]'}`}
@@ -51,6 +79,13 @@ const Layout: React.FC<LayoutProps> = ({ currentView, onChangeView, children, th
           </nav>
 
           <div className="flex items-center gap-2">
+            <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 bg-[#FDFBF7] dark:bg-[#1C1917] border border-[#EAE2D6] dark:border-[#2C2420] rounded-xl mr-2">
+              <User className="w-3.5 h-3.5 text-[#B26B4A] dark:text-[#D4A373]" />
+              <span className="text-[10px] font-bold uppercase tracking-widest text-[#6B705C] dark:text-[#A5A58D]">
+                {userName}
+              </span>
+            </div>
+
             <button 
                 onClick={onToggleTheme}
                 className="p-2.5 rounded-xl bg-white dark:bg-[#1C1917] border border-[#EAE2D6] dark:border-[#2C2420] text-[#6B705C] dark:text-[#A5A58D] hover:text-[#B26B4A] dark:hover:text-[#D4A373] transition-all"
@@ -64,6 +99,13 @@ const Layout: React.FC<LayoutProps> = ({ currentView, onChangeView, children, th
                 title="Einstellungen"
             >
                 <Settings className="w-4 h-4" />
+            </button>
+            <button 
+                onClick={handleLogout}
+                className="p-2.5 rounded-xl bg-white dark:bg-[#1C1917] border border-[#EAE2D6] dark:border-[#2C2420] text-[#6B705C] dark:text-[#A5A58D] hover:text-red-500 transition-all"
+                title="Abmelden"
+            >
+                <LogOut className="w-4 h-4" />
             </button>
           </div>
         </div>
