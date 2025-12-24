@@ -18,6 +18,17 @@ const HISTORY_KEY = 'spanish_assistant_history';
 const THEME_KEY = 'spanish_assistant_theme';
 const SESSION_API_KEY = 'spanish_assistant_session_key';
 
+// Helper to sanitize data for Firestore (removes undefined values)
+const sanitizeData = (data: any) => {
+  const sanitized: any = {};
+  Object.keys(data).forEach(key => {
+    if (data[key] !== undefined) {
+      sanitized[key] = data[key];
+    }
+  });
+  return sanitized;
+};
+
 // API Key Session Management
 export const setSessionApiKey = (key: string) => {
   sessionStorage.setItem(SESSION_API_KEY, key);
@@ -88,8 +99,9 @@ export const addVocabBatch = async (items: Array<Omit<VocabItem, 'id' | 'addedAt
                         addedAt,
                         mastered: false,
                     };
+                    // Sanitize to ensure no undefined values are sent
                     const docRef = doc(colRef, id);
-                    batch.set(docRef, newItem);
+                    batch.set(docRef, sanitizeData(newItem));
                     addedCount++;
                     existingWords.add(normalizedWord);
                 }
@@ -143,7 +155,8 @@ export const importVocabFromJson = async (items: VocabItem[]): Promise<number> =
         if (!existingWords.has(item.word.toLowerCase())) {
           const id = item.id || crypto.randomUUID();
           const docRef = doc(colRef, id);
-          batch.set(docRef, { ...item, id });
+          const itemToSave = { ...item, id };
+          batch.set(docRef, sanitizeData(itemToSave));
           importedCount++;
           existingWords.add(item.word.toLowerCase());
         }
@@ -202,7 +215,7 @@ export const toggleMastered = async (id: string) => {
     if (user) {
         try {
             const docRef = doc(db, 'users', user.uid, 'vocabulary', id);
-            await setDoc(docRef, updatedItem, { merge: true });
+            await setDoc(docRef, sanitizeData(updatedItem), { merge: true });
             return;
         } catch (e) {
             console.error("Failed to update Firestore", e);
