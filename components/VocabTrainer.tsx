@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { VocabItem, WordCategory } from '../types';
 import { getVocab, removeVocab, toggleMastered, importVocabFromJson } from '../services/storageService';
-import { Trash2, CheckCircle, GraduationCap, RefreshCw, Layers, Play, Download, Upload, Loader2, FileJson } from 'lucide-react';
+import { Trash2, CheckCircle, GraduationCap, RefreshCw, Layers, Play, Download, Upload, Loader2, FileJson, Quote } from 'lucide-react';
 import { generateSpeech } from '../services/geminiService';
 
 const VocabTrainer: React.FC = () => {
@@ -38,8 +38,10 @@ const VocabTrainer: React.FC = () => {
   }
 
   const handleDelete = async (id: string) => {
-    await removeVocab(id);
-    loadVocab();
+    if (window.confirm("Dieses Wort aus deiner Sammlung löschen?")) {
+        await removeVocab(id);
+        loadVocab();
+    }
   };
 
   const handleExport = () => {
@@ -102,6 +104,7 @@ const VocabTrainer: React.FC = () => {
       if (result === 'good') {
           await toggleMastered(currentItem.id);
       } else {
+          // Put back in queue if not mastered
           setSessionQueue(prev => [...prev, currentItem]);
       }
 
@@ -110,7 +113,7 @@ const VocabTrainer: React.FC = () => {
       if (currentCardIndex < sessionQueue.length - 1) {
           setCurrentCardIndex(prev => prev + 1);
       } else {
-         alert("Sitzung abgeschlossen!");
+         alert("Sitzung abgeschlossen! Gut gemacht.");
          setMode('list');
          loadVocab();
       }
@@ -157,7 +160,7 @@ const VocabTrainer: React.FC = () => {
             <GraduationCap className="w-10 h-10" />
         </div>
         <h3 className="text-2xl font-serif font-bold text-[#2C2420] dark:text-[#FDFBF7]">Deine Sammlung ist leer</h3>
-        <p className="text-[#6B705C] dark:text-[#A5A58D] mt-3 font-serif italic mb-6">Schlage ein Buch auf oder importiere eine bestehende Sammlung.</p>
+        <p className="text-[#6B705C] dark:text-[#A5A58D] mt-3 font-serif italic mb-6">Scanne ein Buch, um neue Vokabeln automatisch hierher zu speichern.</p>
         
         <input type="file" accept=".json" ref={fileInputRef} className="hidden" onChange={handleFileImport} />
         <button 
@@ -183,7 +186,7 @@ const VocabTrainer: React.FC = () => {
                 <div className="flex justify-between items-start mb-4">
                     <div>
                         <h2 className="text-4xl font-serif font-bold">{unmasteredCount}</h2>
-                        <p className="text-[#FDFBF7]/60 text-sm font-serif italic tracking-wide">Wörter warten auf dich.</p>
+                        <p className="text-[#FDFBF7]/60 text-sm font-serif italic tracking-wide">offene Fundstücke</p>
                     </div>
                     <div className="flex gap-2">
                         <input type="file" accept=".json" ref={fileInputRef} className="hidden" onChange={handleFileImport} />
@@ -211,7 +214,7 @@ const VocabTrainer: React.FC = () => {
                     disabled={unmasteredCount === 0}
                     className="w-full bg-[#B26B4A] dark:bg-[#D4A373] text-white dark:text-[#12100E] font-bold py-4 rounded-2xl shadow-xl hover:bg-[#9E5A3B] transition-all disabled:opacity-30 mt-4 uppercase text-xs tracking-[0.2em]"
                 >
-                    Lern-Sitzung starten
+                    Sitzung starten
                 </button>
             </div>
         </div>
@@ -220,23 +223,30 @@ const VocabTrainer: React.FC = () => {
 
         <div className="grid gap-4">
             {filteredList.length === 0 ? (
-                <p className="text-center text-[#A5A58D] py-12 font-serif italic">Hier gibt es noch nichts zu entdecken.</p>
+                <p className="text-center text-[#A5A58D] py-12 font-serif italic">In dieser Kategorie hast du noch keine Wörter gesammelt.</p>
             ) : (
                 filteredList.map(item => (
                     <div key={item.id} className="bg-white dark:bg-[#1C1917] p-5 rounded-3xl border border-[#EAE2D6] dark:border-[#2C2420] shadow-sm flex justify-between items-center group transition-all hover:border-[#B26B4A]/30 dark:hover:border-[#D4A373]/30">
-                        <div>
+                        <div className="flex-grow">
                             <div className="flex items-center gap-3 mb-1">
                                 <p className="font-serif font-bold text-[#2C2420] dark:text-[#FDFBF7] text-xl">{item.word}</p>
                                 {item.mastered && <CheckCircle className="w-4 h-4 text-[#6B705C] dark:text-[#D4A373]" />}
+                                {item.category && (
+                                    <span className="text-[7px] font-bold uppercase tracking-widest text-[#B26B4A] dark:text-[#D4A373] bg-[#B26B4A]/10 px-1.5 py-0.5 rounded">
+                                        {item.category}
+                                    </span>
+                                )}
                             </div>
                             <p className="text-[#6B705C] dark:text-[#A5A58D] text-sm italic font-serif">{item.translation}</p>
                         </div>
-                        <button 
-                            onClick={() => handleDelete(item.id)}
-                            className="p-3 text-[#A5A58D] hover:text-[#B26B4A] dark:hover:text-[#D4A373] hover:bg-[#FEFAE0] dark:hover:bg-[#2C2420] rounded-2xl transition-all"
-                        >
-                            <Trash2 className="w-5 h-5" />
-                        </button>
+                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button 
+                                onClick={() => handleDelete(item.id)}
+                                className="p-3 text-[#A5A58D] hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 rounded-2xl transition-all"
+                            >
+                                <Trash2 className="w-5 h-5" />
+                            </button>
+                        </div>
                     </div>
                 ))
             )}
@@ -282,16 +292,25 @@ const VocabTrainer: React.FC = () => {
                 </div>
 
                 {showAnswer && (
-                    <div className="flex-1 bg-[#FDFBF7] dark:bg-[#12100E] flex flex-col items-center justify-center p-10 text-center animate-in fade-in slide-in-from-bottom-6 duration-500">
+                    <div className="flex-1 bg-[#FDFBF7] dark:bg-[#12100E] flex flex-col items-center justify-center p-10 text-center animate-in fade-in slide-in-from-bottom-6 duration-500 overflow-y-auto">
                          <h2 className="text-3xl font-serif font-bold text-[#B26B4A] dark:text-[#D4A373] mb-3">{currentCard.translation}</h2>
                          
-                         {currentCard.baseForm && currentCard.baseForm !== currentCard.word && (
+                         {currentCard.baseForm && currentCard.baseForm.toLowerCase() !== currentCard.word.toLowerCase() && (
                              <p className="text-xs text-[#6B705C] dark:text-[#A5A58D] mb-4 font-bold uppercase tracking-widest opacity-60">
-                                 {currentCard.baseForm}
+                                Grundform: {currentCard.baseForm}
                              </p>
                          )}
 
                          <p className="text-[#6B705C] dark:text-[#A5A58D] italic font-serif text-lg leading-relaxed mb-6">"{currentCard.explanation}"</p>
+                         
+                         {currentCard.contextSentence && (
+                            <div className="mb-6 p-4 bg-white/50 dark:bg-white/5 rounded-2xl border border-[#EAE2D6] dark:border-white/10 relative">
+                                <Quote className="w-3 h-3 text-[#B26B4A] dark:text-[#D4A373] absolute top-2 left-2 opacity-30" />
+                                <p className="text-[11px] font-serif italic text-[#6B705C] dark:text-[#A5A58D] px-2">
+                                    {currentCard.contextSentence}
+                                </p>
+                            </div>
+                         )}
                          
                          <button 
                             onClick={(e) => { e.stopPropagation(); playWord(); }}
