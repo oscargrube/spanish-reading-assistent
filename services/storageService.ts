@@ -68,6 +68,10 @@ export const addVocabBatch = async (items: Array<Omit<VocabItem, 'id' | 'addedAt
     const addedAt = Date.now();
     let addedCount = 0;
 
+    // Load existing to prevent duplicates
+    const current = await getVocab();
+    const existingWords = new Set(current.map(v => v.word.toLowerCase()));
+
     if (user) {
         try {
             const batch = writeBatch(db);
@@ -75,18 +79,25 @@ export const addVocabBatch = async (items: Array<Omit<VocabItem, 'id' | 'addedAt
             if (!colRef) return 0;
 
             for (const item of items) {
-                const id = crypto.randomUUID();
-                const newItem: VocabItem = {
-                    ...item,
-                    id,
-                    addedAt,
-                    mastered: false,
-                };
-                const docRef = doc(colRef, id);
-                batch.set(docRef, newItem);
-                addedCount++;
+                const normalizedWord = item.word.toLowerCase();
+                if (!existingWords.has(normalizedWord)) {
+                    const id = crypto.randomUUID();
+                    const newItem: VocabItem = {
+                        ...item,
+                        id,
+                        addedAt,
+                        mastered: false,
+                    };
+                    const docRef = doc(colRef, id);
+                    batch.set(docRef, newItem);
+                    addedCount++;
+                    existingWords.add(normalizedWord);
+                }
             }
-            await batch.commit();
+            
+            if (addedCount > 0) {
+                await batch.commit();
+            }
             return addedCount;
         } catch (e) {
             console.error("Batch add failed in Firestore", e);
@@ -94,10 +105,10 @@ export const addVocabBatch = async (items: Array<Omit<VocabItem, 'id' | 'addedAt
         }
     }
 
-    const current = await getVocab();
     const updated = [...current];
     items.forEach(item => {
-        if (!updated.some(v => v.word.toLowerCase() === item.word.toLowerCase())) {
+        const normalizedWord = item.word.toLowerCase();
+        if (!existingWords.has(normalizedWord)) {
             updated.unshift({
                 ...item,
                 id: crypto.randomUUID(),
@@ -105,6 +116,7 @@ export const addVocabBatch = async (items: Array<Omit<VocabItem, 'id' | 'addedAt
                 mastered: false,
             });
             addedCount++;
+            existingWords.add(normalizedWord);
         }
     });
 
@@ -125,12 +137,15 @@ export const importVocabFromJson = async (items: VocabItem[]): Promise<number> =
       if (!colRef) return 0;
       
       const current = await getVocab();
+      const existingWords = new Set(current.map(v => v.word.toLowerCase()));
+
       for (const item of items) {
-        if (!current.some(v => v.word.toLowerCase() === item.word.toLowerCase())) {
+        if (!existingWords.has(item.word.toLowerCase())) {
           const id = item.id || crypto.randomUUID();
           const docRef = doc(colRef, id);
           batch.set(docRef, { ...item, id });
           importedCount++;
+          existingWords.add(item.word.toLowerCase());
         }
       }
       await batch.commit();
@@ -143,10 +158,13 @@ export const importVocabFromJson = async (items: VocabItem[]): Promise<number> =
 
   const current = await getVocab();
   const updated = [...current];
+  const existingWords = new Set(current.map(v => v.word.toLowerCase()));
+
   items.forEach(item => {
-    if (!updated.some(v => v.word.toLowerCase() === item.word.toLowerCase())) {
+    if (!existingWords.has(item.word.toLowerCase())) {
       updated.unshift({ ...item, id: item.id || crypto.randomUUID() });
       importedCount++;
+      existingWords.add(item.word.toLowerCase());
     }
   });
 

@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Camera, Play, Loader2, ArrowRight, CheckCircle, RotateCcw, ChevronRight, ChevronLeft, XCircle, Sparkles, Book, Key } from 'lucide-react';
 import { PageAnalysisResult, WordAnalysis, AppView } from '../types';
@@ -34,22 +35,23 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView }) => {
       }
   }, []);
 
-  // Update saved words state
-  useEffect(() => {
-      const checkSaved = async () => {
-          if (!result) return;
-          const currentWords = new Set<string>();
-          for (const s of result.sentences) {
-              for (const w of s.words) {
-                  if (w.type === 'word' && await isVocabSaved(w.word)) {
-                      currentWords.add(w.word.toLowerCase());
-                  }
-              }
-          }
-          setSavedWords(currentWords);
-      };
-      checkSaved();
+  // Sync saved words from storage initially
+  const syncSavedState = useCallback(async () => {
+    if (!result) return;
+    const currentWords = new Set<string>();
+    for (const s of result.sentences) {
+        for (const w of s.words) {
+            if (w.type === 'word' && await isVocabSaved(w.word)) {
+                currentWords.add(w.word.toLowerCase());
+            }
+        }
+    }
+    setSavedWords(currentWords);
   }, [result]);
+
+  useEffect(() => {
+      syncSavedState();
+  }, [result, syncSavedState]);
 
   const handleAnalyze = async (base64Data: string) => {
     setLoading(true);
@@ -58,6 +60,7 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView }) => {
     setCurrentSentenceIndex(0);
     setPhase('sentence');
     setCurrentWordIndex(0);
+    setNewlySavedCount(0);
 
     try {
       const data = await analyzeImage(base64Data);
@@ -117,7 +120,7 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView }) => {
             setPhase('translation');
         }
     } else if (phase === 'translation') {
-        setLoading(true); // Short sync loading
+        // Intelligent save on moving forward from translation
         const wordsToSave = lexicalWords.map(w => ({
             word: w.word,
             translation: w.translation || '',
@@ -129,7 +132,13 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView }) => {
         
         const savedCount = await addVocabBatch(wordsToSave);
         setNewlySavedCount(prev => prev + savedCount);
-        setLoading(false);
+        
+        // Update local set to immediately show checkmarks if we revisit or for current view
+        setSavedWords(prev => {
+            const next = new Set(prev);
+            wordsToSave.forEach(w => next.add(w.word.toLowerCase()));
+            return next;
+        });
 
         if (currentSentenceIndex < result.sentences.length - 1) {
             setCurrentSentenceIndex(prev => prev + 1);
@@ -184,7 +193,8 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView }) => {
     return (
       <div className="fixed inset-0 bg-[#FDFBF7] dark:bg-[#12100E] flex flex-col items-center justify-center text-center p-6 z-50">
         <Loader2 className="w-12 h-12 animate-spin text-[#6B705C] dark:text-[#D4A373] mb-4" />
-        <h2 className="text-xl font-serif font-bold text-[#2C2420] dark:text-[#FDFBF7]">Verarbeite...</h2>
+        <h2 className="text-xl font-serif font-bold text-[#2C2420] dark:text-[#FDFBF7]">Verarbeite Seite...</h2>
+        <p className="text-sm text-[#6B705C] dark:text-[#A5A58D] font-serif italic mt-2">Die KI analysiert Grammatik und Vokabeln.</p>
       </div>
     );
   }
@@ -212,10 +222,19 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView }) => {
                   <CheckCircle className="w-8 h-8" />
               </div>
               <h2 className="text-2xl font-serif font-bold text-[#2C2420] dark:text-[#FDFBF7] mb-2">Seite beendet!</h2>
-              <p className="text-[#6B705C] dark:text-[#A5A58D] font-serif italic mb-8">Du hast {newlySavedCount} neue Wörter gelernt.</p>
-              <button onClick={handleReset} className="bg-[#6B705C] dark:bg-[#2C2420] text-white px-10 py-4 rounded-2xl font-bold uppercase text-[10px] tracking-widest border dark:border-[#2C2420]">
-                  Nächste Seite
-              </button>
+              <p className="text-[#6B705C] dark:text-[#A5A58D] font-serif italic mb-8">
+                  {newlySavedCount > 0 
+                    ? `Du hast ${newlySavedCount} neue Fundstücke in deine Sammlung aufgenommen.` 
+                    : "Alle Wörter dieser Seite sind bereits in deiner Sammlung."}
+              </p>
+              <div className="flex gap-4">
+                  <button onClick={handleReset} className="bg-[#6B705C] dark:bg-[#2C2420] text-white px-8 py-4 rounded-2xl font-bold uppercase text-[10px] tracking-widest border dark:border-[#2C2420] shadow-md">
+                      Nächste Seite
+                  </button>
+                  <button onClick={() => onChangeView?.(AppView.VOCAB)} className="bg-[#B26B4A] dark:bg-[#D4A373] text-white dark:text-[#12100E] px-8 py-4 rounded-2xl font-bold uppercase text-[10px] tracking-widest shadow-md">
+                      Zum Lernbereich
+                  </button>
+              </div>
           </div>
       )
   }
@@ -291,7 +310,10 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView }) => {
                                         {playingAudio === `w-${currentSentenceIndex}-${currentWordIndex}` ? <Loader2 className="w-4 h-4 animate-spin text-white"/> : <Play className="w-4 h-4 fill-white text-white dark:text-[#12100E] dark:fill-[#12100E]" />}
                                     </button>
                                     {savedWords.has(currentLexicalWord.word.toLowerCase()) && (
-                                        <span className="text-[8px] font-bold uppercase tracking-widest text-[#E9EDC9]">Gemerkt</span>
+                                        <div className="flex items-center gap-1.5 bg-[#E9EDC9]/20 px-3 py-1.5 rounded-full">
+                                            <CheckCircle className="w-3 h-3 text-[#E9EDC9]" />
+                                            <span className="text-[8px] font-bold uppercase tracking-widest text-[#E9EDC9]">In Sammlung</span>
+                                        </div>
                                     )}
                                 </div>
                             </div>
