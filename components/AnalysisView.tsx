@@ -1,13 +1,16 @@
 
+
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Play, Loader2, CheckCircle, ChevronRight, ChevronLeft, XCircle, Volume2, SkipForward, Save } from 'lucide-react';
-import { PageAnalysisResult, AppView, BookPage } from '../types';
+import { Play, Loader2, CheckCircle, ChevronRight, ChevronLeft, XCircle, Volume2, SkipForward, Save, BookOpen, Plus } from 'lucide-react';
+import { PageAnalysisResult, AppView, BookPage, Book } from '../types';
 import { analyzeImage, generateSpeech } from '../services/geminiService';
-import { addVocabBatch, isVocabSaved, saveCurrentAnalysis, getLastAnalysis, clearLastAnalysis, addPageToBook } from '../services/storageService';
+import { addVocabBatch, isVocabSaved, saveCurrentAnalysis, clearLastAnalysis, addPageToBook, updatePageProgress, getBooks, createBook } from '../services/storageService';
 
 interface AnalysisViewProps {
     onChangeView?: (view: AppView) => void;
-    initialData?: { image: string, analysis: PageAnalysisResult } | null;
+    // When reading an existing page
+    initialData?: BookPage | null;
+    // When scanning into a specific book (Pre-selected)
     targetBookId?: string | null;
     onSaveComplete?: () => void;
 }
@@ -15,41 +18,51 @@ interface AnalysisViewProps {
 type FlowPhase = 'sentence' | 'words' | 'translation';
 
 const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView, initialData, targetBookId, onSaveComplete }) => {
+  // State for Scanning & Image
   const [image, setImage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<PageAnalysisResult | null>(null);
   
+  // State for Reading Flow
   const [currentSentenceIndex, setCurrentSentenceIndex] = useState(0);
   const [phase, setPhase] = useState<FlowPhase>('sentence');
   const [currentWordIndex, setCurrentWordIndex] = useState(0);
 
+  // State for Audio & Progress
   const [playingAudio, setPlayingAudio] = useState<string | null>(null);
   const [finished, setFinished] = useState(false);
   const [newlySavedCount, setNewlySavedCount] = useState(0);
   const [savedWords, setSavedWords] = useState<Set<string>>(new Set());
   
-  const [savingToBook, setSavingToBook] = useState(false);
-  const [savedToBook, setSavedToBook] = useState(false);
+  // State for Book Association & Persistence
+  const [activePageId, setActivePageId] = useState<string | null>(null);
+  const [activeBookId, setActiveBookId] = useState<string | null>(null);
+  const [showBookSelector, setShowBookSelector] = useState(false);
+  const [availableBooks, setAvailableBooks] = useState<Book[]>([]);
+  const [creatingBook, setCreatingBook] = useState(false);
+  const [newBookTitle, setNewBookTitle] = useState('');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Initialize from Props or LocalStorage
+  // Initialization
   useEffect(() => {
       if (initialData) {
-          // View Mode (Reading existing page)
+          // READING MODE: Resume existing page
           setImage(initialData.image);
           setResult(initialData.analysis);
-      } else {
-          // Scan Mode - Check for cached result if not targeting a specific book (standard scan)
-          const last = getLastAnalysis();
-          if (last && !result && !targetBookId) {
-              setResult(last.data);
-              setImage(last.image);
+          setActivePageId(initialData.id);
+          setActiveBookId(initialData.bookId);
+          // Resume progress if available
+          if (initialData.lastSentenceIndex !== undefined && initialData.lastSentenceIndex > 0) {
+              setCurrentSentenceIndex(initialData.lastSentenceIndex);
           }
+      } else if (targetBookId) {
+          // SCAN MODE (Targeted): Will save to this book automatically
+          setActiveBookId(targetBookId);
       }
   }, [initialData, targetBookId]);
 
-  // Sync saved words from storage initially
+  // Sync saved words visually
   const syncSavedState = useCallback(async () => {
     if (!result) return;
     const currentWords = new Set<string>();
@@ -67,27 +80,101 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView, initialData, 
       syncSavedState();
   }, [result, syncSavedState]);
 
+  // Save Progress on Sentence Change
+  useEffect(() => {
+      if (activeBookId && activePageId && result) {
+          // Save progress silently
+          updatePageProgress(activeBookId, activePageId, currentSentenceIndex);
+      }
+  }, [currentSentenceIndex, activeBookId, activePageId, result]);
+
+  // --- ACTIONS ---
+
   const handleAnalyze = async (base64Data: string) => {
     setLoading(true);
     setResult(null);
     setFinished(false);
     setCurrentSentenceIndex(0);
     setPhase('sentence');
-    setCurrentWordIndex(0);
     setNewlySavedCount(0);
+    
+    // Reset page ID as this is a new scan
+    setActivePageId(null);
 
     try {
       const data = await analyzeImage(base64Data);
       setResult(data);
-      if (!targetBookId) {
-         saveCurrentAnalysis(data, base64Data);
+      
+      // IMMEDIATE SAVE LOGIC
+      if (activeBookId) {
+          // Case 1: Book is already known (Targeted Scan)
+          await handleSaveToBookAndVocab(activeBookId, base64Data, data);
+      } else {
+          // Case 2: No book selected (Global Scan) -> Prompt User
+          const books = await getBooks();
+          setAvailableBooks(books);
+          setShowBookSelector(true);
       }
+
     } catch (err: any) {
       console.error(err);
       setImage(null);
+      alert("Analyse fehlgeschlagen. Bitte versuchen Sie es erneut.");
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSaveToBookAndVocab = async (bookId: string, imgData: string, analysisData: PageAnalysisResult) => {
+      try {
+          // 1. Save Page
+          const pageId = await addPageToBook(bookId, imgData, analysisData);
+          setActivePageId(pageId);
+          setActiveBookId(bookId);
+
+          // 2. Save All Vocab Immediately
+          const allWords = analysisData.sentences.flatMap(s => 
+              s.words
+                  .filter(w => w.type === 'word')
+                  .map(w => ({
+                      word: w.word,
+                      translation: w.translation || '',
+                      explanation: w.explanation || '',
+                      category: w.category,
+                      baseForm: w.baseForm,
+                      contextSentence: s.original
+                  }))
+          );
+          
+          if (allWords.length > 0) {
+              const savedCount = await addVocabBatch(allWords);
+              setNewlySavedCount(savedCount);
+              await syncSavedState(); // Refresh visual checks
+          }
+
+      } catch (e) {
+          console.error("Save failed", e);
+          alert("Fehler beim Speichern in die Datenbank.");
+      }
+  };
+
+  const handleBookSelect = async (bookId: string) => {
+      if (!result || !image) return;
+      setShowBookSelector(false);
+      await handleSaveToBookAndVocab(bookId, image, result);
+  };
+
+  const handleCreateAndSelectBook = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!newBookTitle.trim() || !result || !image) return;
+      
+      try {
+          const newId = await createBook(newBookTitle, "Unbekannt");
+          await handleBookSelect(newId);
+          setNewBookTitle('');
+      } catch (e) {
+          alert("Fehler beim Erstellen des Buches.");
+      }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -119,7 +206,7 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView, initialData, 
   const currentSentence = result?.sentences[currentSentenceIndex];
   const lexicalWords = currentSentence?.words.filter(w => w.type === 'word') || [];
 
-  const handleNextPhase = useCallback(async () => {
+  const handleNextPhase = useCallback(() => {
     if (!result || !currentSentence) return;
 
     if (phase === 'sentence') {
@@ -136,58 +223,17 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView, initialData, 
             setPhase('translation');
         }
     } else if (phase === 'translation') {
-        // Intelligent save on moving forward from translation
-        const wordsToSave = lexicalWords.map(w => ({
-            word: w.word,
-            translation: w.translation || '',
-            explanation: w.explanation || '',
-            category: w.category,
-            baseForm: w.baseForm,
-            contextSentence: currentSentence.original
-        }));
-        
-        const savedCount = await addVocabBatch(wordsToSave);
-        setNewlySavedCount(prev => prev + savedCount);
-        
-        // Update local set to immediately show checkmarks if we revisit or for current view
-        setSavedWords(prev => {
-            const next = new Set(prev);
-            wordsToSave.forEach(w => next.add(w.word.toLowerCase()));
-            return next;
-        });
-
         if (currentSentenceIndex < result.sentences.length - 1) {
             setCurrentSentenceIndex(prev => prev + 1);
             setPhase('sentence');
             setCurrentWordIndex(0);
         } else {
             setFinished(true);
-            if (!targetBookId) {
-                clearLastAnalysis();
-            }
-            // If we have a target book (Scan -> Book flow), save automatically at end
-            if (targetBookId && !savedToBook && result && image) {
-                handleSaveToBook();
-            }
+            clearLastAnalysis(); // Clean up temp
         }
     }
-  }, [result, phase, currentWordIndex, currentSentenceIndex, lexicalWords, currentSentence, targetBookId, savedToBook, image]);
+  }, [result, phase, currentWordIndex, currentSentenceIndex, lexicalWords, currentSentence]);
 
-  const handleSaveToBook = async () => {
-      if (!targetBookId || !result || !image) return;
-      setSavingToBook(true);
-      try {
-          await addPageToBook(targetBookId, image, result);
-          setSavedToBook(true);
-      } catch(e) {
-          console.error(e);
-          alert("Fehler beim Speichern der Seite.");
-      } finally {
-          setSavingToBook(false);
-      }
-  }
-
-  // Logic to skip word analysis and go to next sentence (or finish)
   const handleSkipToNextSentence = useCallback(() => {
     if (!result || !currentSentence) return;
     
@@ -197,14 +243,9 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView, initialData, 
         setCurrentWordIndex(0);
     } else {
         setFinished(true);
-        if (!targetBookId) {
-             clearLastAnalysis();
-        }
-        if (targetBookId && !savedToBook && result && image) {
-            handleSaveToBook();
-        }
+        clearLastAnalysis();
     }
-  }, [result, currentSentence, currentSentenceIndex, targetBookId, savedToBook, image]);
+  }, [result, currentSentence, currentSentenceIndex]);
 
   const handlePrevPhase = () => {
     if (phase === 'translation') {
@@ -221,45 +262,99 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView, initialData, 
             setPhase('sentence');
         }
     } else if (phase === 'sentence' && currentSentenceIndex > 0) {
-        // Go back to translation of previous sentence
         setCurrentSentenceIndex(prev => prev - 1);
         setPhase('translation');
     }
   };
 
-  const handleReset = () => {
-    if (targetBookId || initialData) {
-        // If inside a book context, "closing" usually means going back
-        onSaveComplete?.();
-    } else {
-        setImage(null);
-        setResult(null);
-        setFinished(false);
-        clearLastAnalysis();
-    }
+  const handleClose = () => {
+     if (onSaveComplete) {
+         onSaveComplete();
+     } else {
+         onChangeView?.(AppView.HOME);
+     }
   };
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-        if (e.code === 'Space' && result && !finished) {
+        if (e.code === 'Space' && result && !finished && !showBookSelector) {
             e.preventDefault(); 
             handleNextPhase();
         }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [result, finished, handleNextPhase]);
+  }, [result, finished, handleNextPhase, showBookSelector]);
+
+  // --- RENDER ---
 
   if (loading) {
     return (
       <div className="fixed inset-0 bg-[#FDFBF7] dark:bg-[#12100E] flex flex-col items-center justify-center text-center p-6 z-50">
         <Loader2 className="w-12 h-12 animate-spin text-[#6B705C] dark:text-[#D4A373] mb-4" />
-        <h2 className="text-xl font-serif font-bold text-[#2C2420] dark:text-[#FDFBF7]">Verarbeite Seite...</h2>
-        <p className="text-sm text-[#6B705C] dark:text-[#A5A58D] font-serif italic mt-2">Die KI analysiert Grammatik und Vokabeln.</p>
+        <h2 className="text-xl font-serif font-bold text-[#2C2420] dark:text-[#FDFBF7]">Analysiere Seite...</h2>
+        <p className="text-sm text-[#6B705C] dark:text-[#A5A58D] font-serif italic mt-2">Texte werden erkannt und Vokabeln gespeichert.</p>
       </div>
     );
   }
 
+  // Book Selection Modal (After Scan)
+  if (showBookSelector) {
+      return (
+          <div className="fixed inset-0 bg-[#FDFBF7] dark:bg-[#12100E] z-50 flex flex-col items-center justify-center p-6 animate-fade-in">
+              <div className="w-full max-w-md">
+                  <h2 className="text-2xl font-serif font-bold text-[#2C2420] dark:text-[#FDFBF7] mb-2 text-center">In welches Buch?</h2>
+                  <p className="text-[#6B705C] dark:text-[#A5A58D] text-center mb-8 font-serif italic">
+                      Jede Seite muss zu einem Buch gehören. Wähle eines aus oder erstelle ein neues.
+                  </p>
+
+                  <div className="space-y-3 max-h-[40vh] overflow-y-auto mb-6 pr-2">
+                      {availableBooks.map(book => (
+                          <button
+                            key={book.id}
+                            onClick={() => handleBookSelect(book.id)}
+                            className="w-full text-left p-4 bg-white dark:bg-[#1C1917] border border-[#EAE2D6] dark:border-[#2C2420] rounded-2xl flex items-center gap-4 hover:border-[#B26B4A] dark:hover:border-[#D4A373] transition-colors group"
+                          >
+                              <div className={`w-10 h-10 rounded-lg ${book.coverStyle || 'bg-[#2C2420]'} flex items-center justify-center text-white`}>
+                                  <BookOpen className="w-5 h-5" />
+                              </div>
+                              <div>
+                                  <h3 className="font-bold text-[#2C2420] dark:text-[#FDFBF7]">{book.title}</h3>
+                                  <p className="text-xs text-[#6B705C] dark:text-[#A5A58D]">{book.pageCount} Seiten</p>
+                              </div>
+                              <ChevronRight className="w-4 h-4 ml-auto text-[#EAE2D6] group-hover:text-[#B26B4A]" />
+                          </button>
+                      ))}
+                  </div>
+
+                  <div className="relative flex items-center gap-4 mb-6">
+                      <div className="h-px bg-[#EAE2D6] dark:bg-[#2C2420] flex-grow"></div>
+                      <span className="text-[10px] font-bold uppercase text-[#A5A58D]">Oder neu</span>
+                      <div className="h-px bg-[#EAE2D6] dark:bg-[#2C2420] flex-grow"></div>
+                  </div>
+
+                  <form onSubmit={handleCreateAndSelectBook} className="flex gap-2">
+                      <input 
+                        type="text" 
+                        placeholder="Neuer Buchtitel..." 
+                        value={newBookTitle}
+                        onChange={e => setNewBookTitle(e.target.value)}
+                        className="flex-grow bg-white dark:bg-[#1C1917] border border-[#EAE2D6] dark:border-[#2C2420] rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-[#B26B4A]/20"
+                      />
+                      <button 
+                        type="submit"
+                        disabled={!newBookTitle.trim()}
+                        className="bg-[#2C2420] dark:bg-[#D4A373] text-white dark:text-[#12100E] p-3 rounded-xl disabled:opacity-50"
+                      >
+                          <Plus className="w-6 h-6" />
+                      </button>
+                  </form>
+              </div>
+          </div>
+      )
+  }
+
+  // Initial Scan UI
   if (!result && !image) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6 animate-fade-in text-center px-6">
@@ -268,27 +363,26 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView, initialData, 
         </div>
         <div>
             <h2 className="text-2xl font-serif font-bold text-[#2C2420] dark:text-[#FDFBF7] mb-2">
-                {targetBookId ? "Neue Seite hinzufügen" : "Bereit zum Lesen?"}
+                {targetBookId ? "Nächste Seite hinzufügen" : "Bereit zum Lesen?"}
             </h2>
-            <p className="text-[#6B705C] dark:text-[#A5A58D] font-serif italic">
-                {targetBookId ? "Scanne die nächste Seite deines Buches." : "Scanne eine Seite deines spanischen Buches."}
+            <p className="text-[#6B705C] dark:text-[#A5A58D] font-serif italic max-w-xs mx-auto">
+                Scanne eine Buchseite. Wir speichern sie automatisch in deiner Bibliothek.
             </p>
         </div>
         <input type="file" accept="image/*" capture="environment" ref={fileInputRef} className="hidden" onChange={handleFileChange} />
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-3 w-full max-w-xs">
             <button onClick={() => fileInputRef.current?.click()} className="bg-[#2C2420] dark:bg-[#D4A373] text-white dark:text-[#12100E] py-4 px-10 rounded-2xl shadow-xl font-bold uppercase text-[10px] tracking-widest active:scale-95 transition-transform">
-                Kamera starten
+                Seite scannen
             </button>
-            {targetBookId && (
-                <button onClick={handleReset} className="text-[#6B705C] dark:text-[#A5A58D] font-bold uppercase text-[10px] tracking-widest p-2 hover:text-[#2C2420]">
-                    Abbrechen
-                </button>
-            )}
+            <button onClick={handleClose} className="text-[#6B705C] dark:text-[#A5A58D] font-bold uppercase text-[10px] tracking-widest p-2 hover:text-[#2C2420] dark:hover:text-[#FDFBF7]">
+                Zurück
+            </button>
         </div>
       </div>
     );
   }
 
+  // Finished State
   if (finished) {
       return (
           <div className="flex flex-col items-center justify-center min-h-screen text-center px-6 animate-fade-in bg-[#FDFBF7] dark:bg-[#12100E]">
@@ -298,30 +392,16 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView, initialData, 
               <h2 className="text-2xl font-serif font-bold text-[#2C2420] dark:text-[#FDFBF7] mb-2">Seite beendet!</h2>
               <p className="text-[#6B705C] dark:text-[#A5A58D] font-serif italic mb-8">
                   {newlySavedCount > 0 
-                    ? `Du hast ${newlySavedCount} neue Fundstücke in deine Sammlung aufgenommen.` 
-                    : "Alle Wörter dieser Seite sind bereits in deiner Sammlung."}
+                    ? `${newlySavedCount} neue Vokabeln wurden deiner Sammlung hinzugefügt.` 
+                    : "Alle Vokabeln dieser Seite wurden gespeichert."}
               </p>
               
-              {/* Context Action Buttons */}
               <div className="flex flex-col gap-3 w-full max-w-xs">
-                  {targetBookId ? (
-                        <button onClick={onSaveComplete} className="bg-[#2C2420] dark:bg-[#D4A373] text-white dark:text-[#12100E] px-8 py-4 rounded-2xl font-bold uppercase text-[10px] tracking-widest shadow-md">
-                            Zurück zum Buch
-                        </button>
-                  ) : (
-                      <button onClick={handleReset} className="bg-[#6B705C] dark:bg-[#2C2420] text-white px-8 py-4 rounded-2xl font-bold uppercase text-[10px] tracking-widest border dark:border-[#2C2420] shadow-md">
-                          Nächste Seite
-                      </button>
-                  )}
-                  
-                  {!targetBookId && !initialData && (
-                      <button onClick={() => onChangeView?.(AppView.LIBRARY)} className="bg-[#B26B4A] dark:bg-[#D4A373] text-white dark:text-[#12100E] px-8 py-4 rounded-2xl font-bold uppercase text-[10px] tracking-widest shadow-md">
-                          In Buch speichern
-                      </button>
-                  )}
-
+                  <button onClick={handleClose} className="bg-[#2C2420] dark:bg-[#D4A373] text-white dark:text-[#12100E] px-8 py-4 rounded-2xl font-bold uppercase text-[10px] tracking-widest shadow-md">
+                      Zurück zum Buch
+                  </button>
                   <button onClick={() => onChangeView?.(AppView.VOCAB)} className="text-[#6B705C] dark:text-[#A5A58D] px-8 py-2 font-bold uppercase text-[10px] tracking-widest hover:text-[#2C2420] dark:hover:text-[#FDFBF7]">
-                      Zum Lernbereich
+                      Vokabeln lernen
                   </button>
               </div>
           </div>
@@ -345,7 +425,7 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView, initialData, 
                     />
                 </div>
             </div>
-            <button onClick={handleReset} className="p-2 text-[#A5A58D] dark:text-[#2C2420] hover:text-[#B26B4A] dark:hover:text-[#D4A373]">
+            <button onClick={handleClose} className="p-2 text-[#A5A58D] dark:text-[#2C2420] hover:text-[#B26B4A] dark:hover:text-[#D4A373]" title="Schließen & Speichern">
                 <XCircle className="w-5 h-5" />
             </button>
         </div>
@@ -386,11 +466,10 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView, initialData, 
                             </p>
                         </div>
 
-                        {/* Word Analysis Card - No internal scroll, whole page scrolls */}
+                        {/* Word Analysis Card */}
                         {currentLexicalWord && (
                             <div className="relative w-full bg-[#2C2420] dark:bg-[#1C1917] text-[#FDFBF7] p-8 rounded-[2.5rem] shadow-xl border border-transparent dark:border-[#2C2420] flex flex-col animate-fade-in">
                                 
-                                {/* Audio Button - Top Right */}
                                 <button 
                                     onClick={() => handlePlayAudio(currentLexicalWord.word, `w-${currentSentenceIndex}-${currentWordIndex}`)}
                                     className="absolute top-6 right-6 w-10 h-10 bg-[#B26B4A] dark:bg-[#D4A373] rounded-full flex items-center justify-center shadow-lg hover:scale-105 transition-transform z-10"
@@ -406,7 +485,7 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView, initialData, 
                                         {savedWords.has(currentLexicalWord.word.toLowerCase()) && (
                                             <div className="flex items-center gap-1.5 bg-[#E9EDC9]/20 px-2 py-1 rounded-full">
                                                 <CheckCircle className="w-3 h-3 text-[#E9EDC9]" />
-                                                <span className="text-[7px] font-bold uppercase tracking-widest text-[#E9EDC9]">Gespeichert</span>
+                                                <span className="text-[7px] font-bold uppercase tracking-widest text-[#E9EDC9]">In Sammlung</span>
                                             </div>
                                         )}
                                     </div>

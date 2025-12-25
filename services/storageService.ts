@@ -1,4 +1,5 @@
 
+
 import { VocabItem, PageAnalysisResult, PersistedAnalysis, Book, BookPage } from '../types';
 import { db, auth } from './firebase';
 import { 
@@ -91,9 +92,10 @@ export const addVocabBatch = async (items: Array<Omit<VocabItem, 'id' | 'addedAt
     const addedAt = Date.now();
     let addedCount = 0;
 
-    // Load existing to prevent duplicates
+    // Load existing to prevent duplicates (client side check)
+    // In a scalable app, this would be a server-side check or use Firestore keys
     const current = await getVocab();
-    const existingWords = new Set(current.map(v => v.word.toLowerCase()));
+    const existingWords = new Set(current.map(v => v.word.trim().toLowerCase()));
 
     if (user) {
         try {
@@ -101,25 +103,28 @@ export const addVocabBatch = async (items: Array<Omit<VocabItem, 'id' | 'addedAt
             const colRef = getVocabCollection();
             if (!colRef) return 0;
 
+            let ops = 0;
+            // Limit batches to 500 ops if necessary, for now assuming safe batch size
             for (const item of items) {
-                const normalizedWord = item.word.toLowerCase();
-                if (!existingWords.has(normalizedWord)) {
+                const normalizedWord = item.word.trim().toLowerCase();
+                if (!existingWords.has(normalizedWord) && normalizedWord.length > 0) {
                     const id = crypto.randomUUID();
                     const newItem: VocabItem = {
                         ...item,
+                        word: item.word.trim(), // Ensure stored word is trimmed
                         id,
                         addedAt,
                         mastered: false,
                     };
-                    // Sanitize to ensure no undefined values are sent
                     const docRef = doc(colRef, id);
                     batch.set(docRef, sanitizeData(newItem));
                     addedCount++;
                     existingWords.add(normalizedWord);
+                    ops++;
                 }
             }
             
-            if (addedCount > 0) {
+            if (ops > 0) {
                 await batch.commit();
             }
             return addedCount;
@@ -131,10 +136,11 @@ export const addVocabBatch = async (items: Array<Omit<VocabItem, 'id' | 'addedAt
 
     const updated = [...current];
     items.forEach(item => {
-        const normalizedWord = item.word.toLowerCase();
-        if (!existingWords.has(normalizedWord)) {
+        const normalizedWord = item.word.trim().toLowerCase();
+        if (!existingWords.has(normalizedWord) && normalizedWord.length > 0) {
             updated.unshift({
                 ...item,
+                word: item.word.trim(),
                 id: crypto.randomUUID(),
                 addedAt,
                 mastered: false,
@@ -161,16 +167,16 @@ export const importVocabFromJson = async (items: VocabItem[]): Promise<number> =
       if (!colRef) return 0;
       
       const current = await getVocab();
-      const existingWords = new Set(current.map(v => v.word.toLowerCase()));
+      const existingWords = new Set(current.map(v => v.word.trim().toLowerCase()));
 
       for (const item of items) {
-        if (!existingWords.has(item.word.toLowerCase())) {
+        if (!existingWords.has(item.word.trim().toLowerCase())) {
           const id = item.id || crypto.randomUUID();
           const docRef = doc(colRef, id);
           const itemToSave = { ...item, id };
           batch.set(docRef, sanitizeData(itemToSave));
           importedCount++;
-          existingWords.add(item.word.toLowerCase());
+          existingWords.add(item.word.trim().toLowerCase());
         }
       }
       await batch.commit();
@@ -183,13 +189,13 @@ export const importVocabFromJson = async (items: VocabItem[]): Promise<number> =
 
   const current = await getVocab();
   const updated = [...current];
-  const existingWords = new Set(current.map(v => v.word.toLowerCase()));
+  const existingWords = new Set(current.map(v => v.word.trim().toLowerCase()));
 
   items.forEach(item => {
-    if (!existingWords.has(item.word.toLowerCase())) {
+    if (!existingWords.has(item.word.trim().toLowerCase())) {
       updated.unshift({ ...item, id: item.id || crypto.randomUUID() });
       importedCount++;
-      existingWords.add(item.word.toLowerCase());
+      existingWords.add(item.word.trim().toLowerCase());
     }
   });
 
@@ -240,9 +246,10 @@ export const toggleMastered = async (id: string) => {
 
 export const isVocabSaved = async (word: string): Promise<boolean> => {
     const current = await getVocab();
-    return current.some(v => v.word.toLowerCase() === word.toLowerCase());
+    return current.some(v => v.word.trim().toLowerCase() === word.trim().toLowerCase());
 }
 
+// Deprecated in new flow, but kept for legacy
 export const saveCurrentAnalysis = (data: PageAnalysisResult, image: string) => {
     const entry: PersistedAnalysis = { data, image, timestamp: Date.now() };
     localStorage.setItem(ANALYSIS_KEY, JSON.stringify(entry));
@@ -359,7 +366,7 @@ export const getBookPages = async (bookId: string): Promise<BookPage[]> => {
     return stored ? JSON.parse(stored) : [];
 };
 
-export const addPageToBook = async (bookId: string, image: string, analysis: PageAnalysisResult) => {
+export const addPageToBook = async (bookId: string, image: string, analysis: PageAnalysisResult): Promise<string> => {
     const user = currentUser;
     
     // Calculate next page number
@@ -371,7 +378,8 @@ export const addPageToBook = async (bookId: string, image: string, analysis: Pag
         pageNumber,
         image,
         analysis,
-        createdAt: Date.now()
+        createdAt: Date.now(),
+        lastSentenceIndex: 0
     };
 
     if (user) {
@@ -379,13 +387,13 @@ export const addPageToBook = async (bookId: string, image: string, analysis: Pag
             const bookRef = doc(db, 'users', user.uid, 'books', bookId);
             const pagesColRef = collection(bookRef, 'pages');
             
-            await addDoc(pagesColRef, newPage);
+            const docRef = await addDoc(pagesColRef, newPage);
             
             // Increment page count on book
             await updateDoc(bookRef, {
                 pageCount: increment(1)
             });
-            return;
+            return docRef.id;
         } catch (e) {
             console.error("Failed to add page", e);
             throw e;
@@ -407,4 +415,26 @@ export const addPageToBook = async (bookId: string, image: string, analysis: Pag
         books[bookIndex].pageCount = (books[bookIndex].pageCount || 0) + 1;
         localStorage.setItem(BOOKS_KEY, JSON.stringify(books));
     }
+    return id;
 };
+
+export const updatePageProgress = async (bookId: string, pageId: string, sentenceIndex: number) => {
+    const user = currentUser;
+    if (user) {
+         try {
+            const pageRef = doc(db, 'users', user.uid, 'books', bookId, 'pages', pageId);
+            await updateDoc(pageRef, { lastSentenceIndex: sentenceIndex });
+        } catch (e) { console.error("Failed to save progress", e); }
+    } else {
+        // Local storage update
+        const stored = localStorage.getItem(`${BOOKS_KEY}_pages_${bookId}`);
+        if(stored) {
+             const pages = JSON.parse(stored) as BookPage[];
+             const idx = pages.findIndex(p => p.id === pageId);
+             if(idx !== -1) {
+                 pages[idx].lastSentenceIndex = sentenceIndex;
+                 localStorage.setItem(`${BOOKS_KEY}_pages_${bookId}`, JSON.stringify(pages));
+             }
+        }
+    }
+}

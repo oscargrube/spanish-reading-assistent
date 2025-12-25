@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect } from 'react';
 import Layout from './components/Layout';
 import AnalysisView from './components/AnalysisView';
@@ -92,13 +93,10 @@ export default function App() {
       if (activeBookId) {
           // If we were adding to a book or reading a book, go back to library
           setCurrentView(AppView.LIBRARY);
-          // Note: activeBookId is intentionally kept so Library opens that book detail
       } else {
           setCurrentView(AppView.HOME);
       }
       setPageToRead(null);
-      // We don't reset activeBookId here, let Library component handle view state reset if needed
-      // or we can pass a prop to Library to open specific book
   };
 
   const handleViewChange = (view: AppView) => {
@@ -129,7 +127,7 @@ export default function App() {
         return (
             <AnalysisView 
                 onChangeView={handleViewChange} 
-                initialData={pageToRead ? { image: pageToRead.image, analysis: pageToRead.analysis } : null}
+                initialData={pageToRead} // Pass full BookPage object
                 targetBookId={activeBookId} // If set, save result to this book
                 onSaveComplete={handleAnalysisClose}
             />

@@ -1,4 +1,5 @@
 
+
 export type WordCategory = 'noun' | 'verb' | 'adjective' | 'function';
 
 export interface WordAnalysis {
@@ -48,6 +49,7 @@ export interface BookPage {
   image: string; // base64
   analysis: PageAnalysisResult;
   createdAt: number;
+  lastSentenceIndex?: number;
 }
 
 export enum AppView {
