@@ -16,6 +16,7 @@ const BookLibrary: React.FC<BookLibraryProps> = ({ onChangeView, onOpenPage, onA
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [newTitle, setNewTitle] = useState('');
     const [newAuthor, setNewAuthor] = useState('');
+    const [isCreating, setIsCreating] = useState(false);
     
     // View state: 'library' or 'book_detail'
     const [activeBook, setActiveBook] = useState<Book | null>(null);
@@ -33,9 +34,16 @@ const BookLibrary: React.FC<BookLibraryProps> = ({ onChangeView, onOpenPage, onA
 
     const loadBooks = async () => {
         setLoading(true);
-        const data = await getBooks();
-        setBooks(data);
-        setLoading(false);
+        try {
+            const data = await getBooks();
+            setBooks(data);
+        } catch (error) {
+            console.error("Failed to load books:", error);
+            alert("Fehler beim Laden der Bücher. Fehlende Berechtigungen. Prüfe die Browser-Konsole und die Firestore-Regeln.");
+            setBooks([]);
+        } finally {
+            setLoading(false);
+        }
     };
 
     const loadPages = async (bookId: string) => {
@@ -45,12 +53,21 @@ const BookLibrary: React.FC<BookLibraryProps> = ({ onChangeView, onOpenPage, onA
 
     const handleCreateBook = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!newTitle.trim()) return;
-        await createBook(newTitle, newAuthor);
-        setShowCreateModal(false);
-        setNewTitle('');
-        setNewAuthor('');
-        loadBooks();
+        if (!newTitle.trim() || isCreating) return;
+
+        setIsCreating(true);
+        try {
+            await createBook(newTitle, newAuthor);
+            setShowCreateModal(false);
+            setNewTitle('');
+            setNewAuthor('');
+            loadBooks();
+        } catch (error) {
+            console.error("Failed to create book:", error);
+            alert("Fehler beim Erstellen des Buches. Prüfe die Browser-Konsole für Details.");
+        } finally {
+            setIsCreating(false);
+        }
     };
 
     const handleDeleteBook = async (e: React.MouseEvent, id: string) => {
@@ -198,7 +215,8 @@ const BookLibrary: React.FC<BookLibraryProps> = ({ onChangeView, onOpenPage, onA
                                 <label className="text-[10px] font-bold uppercase tracking-widest text-[#6B705C] dark:text-[#A5A58D] ml-2 mb-1 block">Titel</label>
                                 <input 
                                     autoFocus
-                                    className="w-full bg-white dark:bg-[#12100E] border border-[#EAE2D6] dark:border-[#2C2420] rounded-2xl py-4 px-4 outline-none focus:ring-2 focus:ring-[#B26B4A]/20"
+                                    disabled={isCreating}
+                                    className="w-full bg-white dark:bg-[#12100E] border border-[#EAE2D6] dark:border-[#2C2420] rounded-2xl py-4 px-4 outline-none focus:ring-2 focus:ring-[#B26B4A]/20 disabled:opacity-50"
                                     placeholder="z.B. Harry Potter y la piedra filosofal"
                                     value={newTitle}
                                     onChange={e => setNewTitle(e.target.value)}
@@ -207,7 +225,8 @@ const BookLibrary: React.FC<BookLibraryProps> = ({ onChangeView, onOpenPage, onA
                             <div>
                                 <label className="text-[10px] font-bold uppercase tracking-widest text-[#6B705C] dark:text-[#A5A58D] ml-2 mb-1 block">Autor (Optional)</label>
                                 <input 
-                                    className="w-full bg-white dark:bg-[#12100E] border border-[#EAE2D6] dark:border-[#2C2420] rounded-2xl py-4 px-4 outline-none focus:ring-2 focus:ring-[#B26B4A]/20"
+                                    disabled={isCreating}
+                                    className="w-full bg-white dark:bg-[#12100E] border border-[#EAE2D6] dark:border-[#2C2420] rounded-2xl py-4 px-4 outline-none focus:ring-2 focus:ring-[#B26B4A]/20 disabled:opacity-50"
                                     placeholder="z.B. J.K. Rowling"
                                     value={newAuthor}
                                     onChange={e => setNewAuthor(e.target.value)}
@@ -216,17 +235,18 @@ const BookLibrary: React.FC<BookLibraryProps> = ({ onChangeView, onOpenPage, onA
                             <div className="flex gap-3 pt-4">
                                 <button 
                                     type="button"
+                                    disabled={isCreating}
                                     onClick={() => setShowCreateModal(false)}
-                                    className="flex-1 py-4 rounded-2xl font-bold uppercase text-[10px] tracking-widest border border-[#EAE2D6] dark:border-[#2C2420] hover:bg-[#EAE2D6]/20"
+                                    className="flex-1 py-4 rounded-2xl font-bold uppercase text-[10px] tracking-widest border border-[#EAE2D6] dark:border-[#2C2420] hover:bg-[#EAE2D6]/20 disabled:opacity-50"
                                 >
                                     Abbrechen
                                 </button>
                                 <button 
                                     type="submit"
-                                    disabled={!newTitle.trim()}
-                                    className="flex-1 bg-[#2C2420] dark:bg-[#D4A373] text-white dark:text-[#12100E] py-4 rounded-2xl font-bold uppercase text-[10px] tracking-widest shadow-lg disabled:opacity-50"
+                                    disabled={!newTitle.trim() || isCreating}
+                                    className="flex-1 bg-[#2C2420] dark:bg-[#D4A373] text-white dark:text-[#12100E] py-4 rounded-2xl font-bold uppercase text-[10px] tracking-widest shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
-                                    Erstellen
+                                    {isCreating ? 'Wird erstellt...' : 'Erstellen'}
                                 </button>
                             </div>
                         </form>
