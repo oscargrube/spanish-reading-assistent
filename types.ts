@@ -32,10 +32,29 @@ export interface VocabItem {
   mastered: boolean;
 }
 
+export interface Book {
+  id: string;
+  title: string;
+  author?: string;
+  coverStyle?: string; // CSS color class or similar
+  createdAt: number;
+  pageCount: number;
+}
+
+export interface BookPage {
+  id: string;
+  bookId: string;
+  pageNumber: number;
+  image: string; // base64
+  analysis: PageAnalysisResult;
+  createdAt: number;
+}
+
 export enum AppView {
   HOME = 'HOME',
   ANALYZE = 'ANALYZE',
   VOCAB = 'VOCAB',
+  LIBRARY = 'LIBRARY',
   HISTORY = 'HISTORY',
   SETTINGS = 'SETTINGS',
 }

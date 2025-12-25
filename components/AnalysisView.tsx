@@ -1,17 +1,20 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Play, Loader2, CheckCircle, ChevronRight, ChevronLeft, XCircle, Volume2, SkipForward } from 'lucide-react';
-import { PageAnalysisResult, AppView } from '../types';
+import { Play, Loader2, CheckCircle, ChevronRight, ChevronLeft, XCircle, Volume2, SkipForward, Save } from 'lucide-react';
+import { PageAnalysisResult, AppView, BookPage } from '../types';
 import { analyzeImage, generateSpeech } from '../services/geminiService';
-import { addVocabBatch, isVocabSaved, saveCurrentAnalysis, getLastAnalysis, clearLastAnalysis } from '../services/storageService';
+import { addVocabBatch, isVocabSaved, saveCurrentAnalysis, getLastAnalysis, clearLastAnalysis, addPageToBook } from '../services/storageService';
 
 interface AnalysisViewProps {
     onChangeView?: (view: AppView) => void;
+    initialData?: { image: string, analysis: PageAnalysisResult } | null;
+    targetBookId?: string | null;
+    onSaveComplete?: () => void;
 }
 
 type FlowPhase = 'sentence' | 'words' | 'translation';
 
-const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView }) => {
+const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView, initialData, targetBookId, onSaveComplete }) => {
   const [image, setImage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<PageAnalysisResult | null>(null);
@@ -25,15 +28,26 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView }) => {
   const [newlySavedCount, setNewlySavedCount] = useState(0);
   const [savedWords, setSavedWords] = useState<Set<string>>(new Set());
   
+  const [savingToBook, setSavingToBook] = useState(false);
+  const [savedToBook, setSavedToBook] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Initialize from Props or LocalStorage
   useEffect(() => {
-      const last = getLastAnalysis();
-      if (last && !result) {
-          setResult(last.data);
-          setImage(last.image);
+      if (initialData) {
+          // View Mode (Reading existing page)
+          setImage(initialData.image);
+          setResult(initialData.analysis);
+      } else {
+          // Scan Mode - Check for cached result if not targeting a specific book (standard scan)
+          const last = getLastAnalysis();
+          if (last && !result && !targetBookId) {
+              setResult(last.data);
+              setImage(last.image);
+          }
       }
-  }, []);
+  }, [initialData, targetBookId]);
 
   // Sync saved words from storage initially
   const syncSavedState = useCallback(async () => {
@@ -65,7 +79,9 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView }) => {
     try {
       const data = await analyzeImage(base64Data);
       setResult(data);
-      saveCurrentAnalysis(data, base64Data);
+      if (!targetBookId) {
+         saveCurrentAnalysis(data, base64Data);
+      }
     } catch (err: any) {
       console.error(err);
       setImage(null);
@@ -146,18 +162,34 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView }) => {
             setCurrentWordIndex(0);
         } else {
             setFinished(true);
-            clearLastAnalysis();
+            if (!targetBookId) {
+                clearLastAnalysis();
+            }
+            // If we have a target book (Scan -> Book flow), save automatically at end
+            if (targetBookId && !savedToBook && result && image) {
+                handleSaveToBook();
+            }
         }
     }
-  }, [result, phase, currentWordIndex, currentSentenceIndex, lexicalWords, currentSentence]);
+  }, [result, phase, currentWordIndex, currentSentenceIndex, lexicalWords, currentSentence, targetBookId, savedToBook, image]);
+
+  const handleSaveToBook = async () => {
+      if (!targetBookId || !result || !image) return;
+      setSavingToBook(true);
+      try {
+          await addPageToBook(targetBookId, image, result);
+          setSavedToBook(true);
+      } catch(e) {
+          console.error(e);
+          alert("Fehler beim Speichern der Seite.");
+      } finally {
+          setSavingToBook(false);
+      }
+  }
 
   // Logic to skip word analysis and go to next sentence (or finish)
   const handleSkipToNextSentence = useCallback(() => {
     if (!result || !currentSentence) return;
-    
-    // We treat skipping as "done with this sentence", so we move to next sentence index directly
-    // Ideally, we might still want to trigger the "translation" phase before leaving?
-    // Based on user request "directly to next sentence", we jump index.
     
     if (currentSentenceIndex < result.sentences.length - 1) {
         setCurrentSentenceIndex(prev => prev + 1);
@@ -165,9 +197,14 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView }) => {
         setCurrentWordIndex(0);
     } else {
         setFinished(true);
-        clearLastAnalysis();
+        if (!targetBookId) {
+             clearLastAnalysis();
+        }
+        if (targetBookId && !savedToBook && result && image) {
+            handleSaveToBook();
+        }
     }
-  }, [result, currentSentence, currentSentenceIndex]);
+  }, [result, currentSentence, currentSentenceIndex, targetBookId, savedToBook, image]);
 
   const handlePrevPhase = () => {
     if (phase === 'translation') {
@@ -191,10 +228,15 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView }) => {
   };
 
   const handleReset = () => {
-    setImage(null);
-    setResult(null);
-    setFinished(false);
-    clearLastAnalysis();
+    if (targetBookId || initialData) {
+        // If inside a book context, "closing" usually means going back
+        onSaveComplete?.();
+    } else {
+        setImage(null);
+        setResult(null);
+        setFinished(false);
+        clearLastAnalysis();
+    }
   };
 
   useEffect(() => {
@@ -221,19 +263,28 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView }) => {
   if (!result && !image) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6 animate-fade-in text-center px-6">
-         {/* ... (Existing upload UI code remains mostly same, just slight context preservation) ... */}
-         {/* Reusing existing simplified upload UI for brevity in this block, assuming parent container handles full height */}
         <div className="bg-[#2C2420] dark:bg-[#1C1917] p-4 rounded-full mb-2">
             <Volume2 className="w-8 h-8 text-[#FDFBF7] dark:text-[#D4A373]" />
         </div>
         <div>
-            <h2 className="text-2xl font-serif font-bold text-[#2C2420] dark:text-[#FDFBF7] mb-2">Bereit zum Lesen?</h2>
-            <p className="text-[#6B705C] dark:text-[#A5A58D] font-serif italic">Scanne eine Seite deines spanischen Buches.</p>
+            <h2 className="text-2xl font-serif font-bold text-[#2C2420] dark:text-[#FDFBF7] mb-2">
+                {targetBookId ? "Neue Seite hinzufügen" : "Bereit zum Lesen?"}
+            </h2>
+            <p className="text-[#6B705C] dark:text-[#A5A58D] font-serif italic">
+                {targetBookId ? "Scanne die nächste Seite deines Buches." : "Scanne eine Seite deines spanischen Buches."}
+            </p>
         </div>
         <input type="file" accept="image/*" capture="environment" ref={fileInputRef} className="hidden" onChange={handleFileChange} />
-        <button onClick={() => fileInputRef.current?.click()} className="bg-[#2C2420] dark:bg-[#D4A373] text-white dark:text-[#12100E] py-4 px-10 rounded-2xl shadow-xl font-bold uppercase text-[10px] tracking-widest active:scale-95 transition-transform">
-            Kamera starten
-        </button>
+        <div className="flex flex-col gap-3">
+            <button onClick={() => fileInputRef.current?.click()} className="bg-[#2C2420] dark:bg-[#D4A373] text-white dark:text-[#12100E] py-4 px-10 rounded-2xl shadow-xl font-bold uppercase text-[10px] tracking-widest active:scale-95 transition-transform">
+                Kamera starten
+            </button>
+            {targetBookId && (
+                <button onClick={handleReset} className="text-[#6B705C] dark:text-[#A5A58D] font-bold uppercase text-[10px] tracking-widest p-2 hover:text-[#2C2420]">
+                    Abbrechen
+                </button>
+            )}
+        </div>
       </div>
     );
   }
@@ -250,11 +301,26 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView }) => {
                     ? `Du hast ${newlySavedCount} neue Fundstücke in deine Sammlung aufgenommen.` 
                     : "Alle Wörter dieser Seite sind bereits in deiner Sammlung."}
               </p>
-              <div className="flex gap-4">
-                  <button onClick={handleReset} className="bg-[#6B705C] dark:bg-[#2C2420] text-white px-8 py-4 rounded-2xl font-bold uppercase text-[10px] tracking-widest border dark:border-[#2C2420] shadow-md">
-                      Nächste Seite
-                  </button>
-                  <button onClick={() => onChangeView?.(AppView.VOCAB)} className="bg-[#B26B4A] dark:bg-[#D4A373] text-white dark:text-[#12100E] px-8 py-4 rounded-2xl font-bold uppercase text-[10px] tracking-widest shadow-md">
+              
+              {/* Context Action Buttons */}
+              <div className="flex flex-col gap-3 w-full max-w-xs">
+                  {targetBookId ? (
+                        <button onClick={onSaveComplete} className="bg-[#2C2420] dark:bg-[#D4A373] text-white dark:text-[#12100E] px-8 py-4 rounded-2xl font-bold uppercase text-[10px] tracking-widest shadow-md">
+                            Zurück zum Buch
+                        </button>
+                  ) : (
+                      <button onClick={handleReset} className="bg-[#6B705C] dark:bg-[#2C2420] text-white px-8 py-4 rounded-2xl font-bold uppercase text-[10px] tracking-widest border dark:border-[#2C2420] shadow-md">
+                          Nächste Seite
+                      </button>
+                  )}
+                  
+                  {!targetBookId && !initialData && (
+                      <button onClick={() => onChangeView?.(AppView.LIBRARY)} className="bg-[#B26B4A] dark:bg-[#D4A373] text-white dark:text-[#12100E] px-8 py-4 rounded-2xl font-bold uppercase text-[10px] tracking-widest shadow-md">
+                          In Buch speichern
+                      </button>
+                  )}
+
+                  <button onClick={() => onChangeView?.(AppView.VOCAB)} className="text-[#6B705C] dark:text-[#A5A58D] px-8 py-2 font-bold uppercase text-[10px] tracking-widest hover:text-[#2C2420] dark:hover:text-[#FDFBF7]">
                       Zum Lernbereich
                   </button>
               </div>

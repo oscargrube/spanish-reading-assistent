@@ -1,5 +1,5 @@
 
-import { VocabItem, PageAnalysisResult, PersistedAnalysis } from '../types';
+import { VocabItem, PageAnalysisResult, PersistedAnalysis, Book, BookPage } from '../types';
 import { db, auth } from './firebase';
 import { 
   collection, 
@@ -9,7 +9,11 @@ import {
   deleteDoc, 
   query, 
   orderBy, 
-  writeBatch
+  writeBatch,
+  addDoc,
+  updateDoc,
+  increment,
+  getDoc
 } from 'firebase/firestore';
 import { onAuthStateChanged, User } from 'firebase/auth';
 
@@ -18,6 +22,7 @@ const ANALYSIS_KEY = 'spanish_assistant_last_analysis';
 const HISTORY_KEY = 'spanish_assistant_history';
 const THEME_KEY = 'spanish_assistant_theme';
 const SESSION_API_KEY = 'spanish_assistant_session_key';
+const BOOKS_KEY = 'spanish_assistant_books';
 
 // Keep track of the current user state directly in the service
 let currentUser: User | null = null;
@@ -267,4 +272,139 @@ export const getTheme = (): 'light' | 'dark' => {
 
 export const setTheme = (theme: 'light' | 'dark') => {
   localStorage.setItem(THEME_KEY, theme);
+};
+
+// --- BOOK & PAGE MANAGEMENT ---
+
+export const getBooks = async (): Promise<Book[]> => {
+    const user = currentUser;
+    if (user) {
+        try {
+            const colRef = collection(db, 'users', user.uid, 'books');
+            const q = query(colRef, orderBy('createdAt', 'desc'));
+            const querySnapshot = await getDocs(q);
+            return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Book));
+        } catch (e) {
+            console.error("Failed to load books", e);
+            return [];
+        }
+    }
+    
+    // LocalStorage fallback
+    const stored = localStorage.getItem(BOOKS_KEY);
+    return stored ? JSON.parse(stored) : [];
+};
+
+export const createBook = async (title: string, author: string): Promise<string> => {
+    const user = currentUser;
+    const newBook: Omit<Book, 'id'> = {
+        title,
+        author,
+        createdAt: Date.now(),
+        pageCount: 0,
+        coverStyle: ['bg-emerald-800', 'bg-amber-900', 'bg-slate-800', 'bg-indigo-900'][Math.floor(Math.random() * 4)]
+    };
+
+    if (user) {
+        try {
+            const colRef = collection(db, 'users', user.uid, 'books');
+            const docRef = await addDoc(colRef, newBook);
+            return docRef.id;
+        } catch (e) {
+            console.error("Failed to create book", e);
+            throw e;
+        }
+    }
+
+    const books = await getBooks();
+    const id = crypto.randomUUID();
+    const bookWithId = { ...newBook, id };
+    localStorage.setItem(BOOKS_KEY, JSON.stringify([bookWithId, ...books]));
+    return id;
+};
+
+export const deleteBook = async (bookId: string) => {
+     const user = currentUser;
+     if (user) {
+         try {
+             // Note: This leaves subcollections (pages) orphaned in standard Firestore. 
+             // In a real production app, we would use a cloud function to delete recursively.
+             await deleteDoc(doc(db, 'users', user.uid, 'books', bookId));
+             return;
+         } catch(e) { console.error(e) }
+     }
+
+     const books = await getBooks();
+     const updated = books.filter(b => b.id !== bookId);
+     localStorage.setItem(BOOKS_KEY, JSON.stringify(updated));
+     // Also remove pages
+     localStorage.removeItem(`${BOOKS_KEY}_pages_${bookId}`);
+}
+
+export const getBookPages = async (bookId: string): Promise<BookPage[]> => {
+    const user = currentUser;
+    if (user) {
+        try {
+            const colRef = collection(db, 'users', user.uid, 'books', bookId, 'pages');
+            const q = query(colRef, orderBy('pageNumber', 'asc'));
+            const querySnapshot = await getDocs(q);
+            return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as BookPage));
+        } catch (e) {
+            console.error("Failed to load pages", e);
+            return [];
+        }
+    }
+
+    const stored = localStorage.getItem(`${BOOKS_KEY}_pages_${bookId}`);
+    return stored ? JSON.parse(stored) : [];
+};
+
+export const addPageToBook = async (bookId: string, image: string, analysis: PageAnalysisResult) => {
+    const user = currentUser;
+    
+    // Calculate next page number
+    const currentPages = await getBookPages(bookId);
+    const pageNumber = currentPages.length + 1;
+
+    const newPage: Omit<BookPage, 'id'> = {
+        bookId,
+        pageNumber,
+        image,
+        analysis,
+        createdAt: Date.now()
+    };
+
+    if (user) {
+        try {
+            const bookRef = doc(db, 'users', user.uid, 'books', bookId);
+            const pagesColRef = collection(bookRef, 'pages');
+            
+            await addDoc(pagesColRef, newPage);
+            
+            // Increment page count on book
+            await updateDoc(bookRef, {
+                pageCount: increment(1)
+            });
+            return;
+        } catch (e) {
+            console.error("Failed to add page", e);
+            throw e;
+        }
+    }
+
+    const id = crypto.randomUUID();
+    const pageWithId = { ...newPage, id };
+    
+    // Save pages
+    const pages = await getBookPages(bookId);
+    pages.push(pageWithId);
+    localStorage.setItem(`${BOOKS_KEY}_pages_${bookId}`, JSON.stringify(pages));
+
+    // Update book count
+    const books = await getBooks();
+    const bookIndex = books.findIndex(b => b.id === bookId);
+    if (bookIndex >= 0) {
+        books[bookIndex].pageCount = (books[bookIndex].pageCount || 0) + 1;
+        localStorage.setItem(BOOKS_KEY, JSON.stringify(books));
+    }
 };

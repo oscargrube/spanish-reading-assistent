@@ -19,7 +19,11 @@ const app = initializeApp(firebaseConfig);
 
 // Initialize Firebase Analytics for web
 if (typeof window !== 'undefined') {
-  getAnalytics(app);
+  try {
+    getAnalytics(app);
+  } catch (e) {
+    console.warn("Analytics initialization failed", e);
+  }
 }
 
 const db = getFirestore(app);

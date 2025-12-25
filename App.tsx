@@ -5,9 +5,10 @@ import AnalysisView from './components/AnalysisView';
 import VocabTrainer from './components/VocabTrainer';
 import SettingsView from './components/SettingsView';
 import AuthView from './components/AuthView';
+import BookLibrary from './components/BookLibrary';
 import ApiKeyModal from './components/ApiKeyModal';
-import { AppView, PersistedAnalysis } from './types';
-import { BookOpen, Camera, Bookmark, Sparkles, History, ArrowRight, Settings, Loader2 } from 'lucide-react';
+import { AppView, PersistedAnalysis, BookPage } from './types';
+import { BookOpen, Camera, Bookmark, Sparkles, History, ArrowRight, Settings, Loader2, Library } from 'lucide-react';
 import { getLastAnalysis, getVocab, getTheme, setTheme as saveTheme, getSessionApiKey } from './services/storageService';
 import { auth } from './services/firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
@@ -21,6 +22,10 @@ export default function App() {
   const [isGuest, setIsGuest] = useState<boolean>(localStorage.getItem('spanish_assistant_is_guest') === 'true');
   const [authLoading, setAuthLoading] = useState(true);
   const [showApiKeyModal, setShowApiKeyModal] = useState(false);
+
+  // State for Book Library Integration
+  const [activeBookId, setActiveBookId] = useState<string | null>(null);
+  const [pageToRead, setPageToRead] = useState<BookPage | null>(null);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -69,6 +74,42 @@ export default function App() {
     localStorage.removeItem('spanish_assistant_is_guest');
   };
 
+  // --- Navigation Handlers ---
+
+  const handleOpenPage = (page: BookPage) => {
+      setPageToRead(page);
+      setActiveBookId(page.bookId); // Keep book context
+      setCurrentView(AppView.ANALYZE);
+  };
+
+  const handleAddPageToBook = (bookId: string) => {
+      setActiveBookId(bookId);
+      setPageToRead(null); // Clear any read data to start fresh scan
+      setCurrentView(AppView.ANALYZE);
+  };
+
+  const handleAnalysisClose = () => {
+      if (activeBookId) {
+          // If we were adding to a book or reading a book, go back to library
+          setCurrentView(AppView.LIBRARY);
+          // Note: activeBookId is intentionally kept so Library opens that book detail
+      } else {
+          setCurrentView(AppView.HOME);
+      }
+      setPageToRead(null);
+      // We don't reset activeBookId here, let Library component handle view state reset if needed
+      // or we can pass a prop to Library to open specific book
+  };
+
+  const handleViewChange = (view: AppView) => {
+      // Clear context when manually navigating via menu
+      if (view !== AppView.ANALYZE) {
+          setActiveBookId(null);
+          setPageToRead(null);
+      }
+      setCurrentView(view);
+  }
+
   if (authLoading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-[#FDFBF7] dark:bg-[#12100E]">
@@ -85,9 +126,24 @@ export default function App() {
   const renderContent = () => {
     switch (currentView) {
       case AppView.ANALYZE:
-        return <AnalysisView onChangeView={setCurrentView} />;
+        return (
+            <AnalysisView 
+                onChangeView={handleViewChange} 
+                initialData={pageToRead ? { image: pageToRead.image, analysis: pageToRead.analysis } : null}
+                targetBookId={activeBookId} // If set, save result to this book
+                onSaveComplete={handleAnalysisClose}
+            />
+        );
       case AppView.VOCAB:
         return <VocabTrainer />;
+      case AppView.LIBRARY:
+        return (
+            <BookLibrary 
+                onChangeView={handleViewChange} 
+                onOpenPage={handleOpenPage}
+                onAddPage={handleAddPageToBook}
+            />
+        );
       case AppView.SETTINGS:
         return <SettingsView />;
       case AppView.HOME:
@@ -107,28 +163,30 @@ export default function App() {
                     <h2 className="text-4xl font-serif font-bold mb-4 tracking-tight">Hola amigo.</h2>
                     <p className="text-[#FDFBF7]/70 text-md font-serif italic leading-relaxed mb-6 max-w-sm">
                         {isGuest 
-                          ? 'Deine Vokabeln werden lokal im Browser gespeichert. Exportiere sie regelmäßig!' 
-                          : 'Dein Fortschritt wird sicher in der Cloud synchronisiert.'}
+                          ? 'Deine Bücher werden lokal gespeichert. Melde dich an, um sie überall zu nutzen.' 
+                          : 'Organisiere deine Lektüre in der neuen Bibliothek.'}
                     </p>
                     
                     <div className="flex flex-wrap gap-3">
                         <button 
-                            onClick={() => setCurrentView(AppView.ANALYZE)}
+                            onClick={() => {
+                                setActiveBookId(null);
+                                setPageToRead(null);
+                                setCurrentView(AppView.ANALYZE);
+                            }}
                             className="bg-[#B26B4A] dark:bg-[#D4A373] text-white dark:text-[#12100E] font-bold py-3.5 px-6 rounded-xl shadow-lg hover:bg-[#9E5A3B] transition-all inline-flex items-center gap-3 uppercase text-[10px] tracking-widest"
                         >
                             <Camera className="w-4 h-4" />
-                            Seite scannen
+                            Schnellscan
                         </button>
                         
-                        {lastScan && (
-                            <button 
-                                onClick={() => setCurrentView(AppView.ANALYZE)}
-                                className="bg-white/10 text-white border border-white/20 font-bold py-3.5 px-6 rounded-xl shadow-lg hover:bg-white/20 transition-all inline-flex items-center gap-3 uppercase text-[10px] tracking-widest"
-                            >
-                                <History className="w-4 h-4" />
-                                Letzte Seite fortsetzen
-                            </button>
-                        )}
+                        <button 
+                            onClick={() => setCurrentView(AppView.LIBRARY)}
+                            className="bg-white/10 text-white border border-white/20 font-bold py-3.5 px-6 rounded-xl shadow-lg hover:bg-white/20 transition-all inline-flex items-center gap-3 uppercase text-[10px] tracking-widest"
+                        >
+                            <Library className="w-4 h-4" />
+                            Bibliothek öffnen
+                        </button>
                     </div>
                 </div>
             </div>
@@ -136,16 +194,16 @@ export default function App() {
             {/* Quick Stats & Navigation */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div 
-                    onClick={() => setCurrentView(AppView.ANALYZE)}
+                    onClick={() => setCurrentView(AppView.LIBRARY)}
                     className="bg-white dark:bg-[#1C1917] p-6 rounded-[2rem] shadow-sm border border-[#EAE2D6] dark:border-[#2C2420] cursor-pointer hover:border-[#B26B4A]/30 dark:hover:border-[#D4A373]/30 hover:shadow-md transition-all group"
                 >
                     <div className="w-12 h-12 bg-[#FEFAE0] dark:bg-[#2C2420] rounded-xl flex items-center justify-center text-[#B26B4A] dark:text-[#D4A373] mb-4 group-hover:scale-105 transition-transform">
-                        <BookOpen className="w-6 h-6" />
+                        <Library className="w-6 h-6" />
                     </div>
                     <div className="flex justify-between items-start">
                         <div>
-                            <h3 className="text-xl font-serif font-bold text-[#2C2420] dark:text-[#FDFBF7] mb-1">Lesereise</h3>
-                            <p className="text-xs text-[#6B705C] dark:text-[#A5A58D] font-serif italic">Analysiere Texte und lerne Schätze kennen.</p>
+                            <h3 className="text-xl font-serif font-bold text-[#2C2420] dark:text-[#FDFBF7] mb-1">Bibliothek</h3>
+                            <p className="text-xs text-[#6B705C] dark:text-[#A5A58D] font-serif italic">Erstelle Bücher und speichere Seiten dauerhaft.</p>
                         </div>
                         <ArrowRight className="w-4 h-4 text-[#EAE2D6] dark:text-[#2C2420] group-hover:text-[#B26B4A] dark:group-hover:text-[#D4A373] transition-colors" />
                     </div>
@@ -192,7 +250,7 @@ export default function App() {
   return (
     <Layout 
       currentView={currentView} 
-      onChangeView={setCurrentView} 
+      onChangeView={handleViewChange} 
       theme={theme} 
       onToggleTheme={toggleTheme}
       isGuest={isGuest}
