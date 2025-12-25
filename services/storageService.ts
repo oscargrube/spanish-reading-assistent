@@ -11,12 +11,19 @@ import {
   orderBy, 
   writeBatch
 } from 'firebase/firestore';
+import { onAuthStateChanged, User } from 'firebase/auth';
 
 const VOCAB_KEY = 'spanish_assistant_vocab';
 const ANALYSIS_KEY = 'spanish_assistant_last_analysis';
 const HISTORY_KEY = 'spanish_assistant_history';
 const THEME_KEY = 'spanish_assistant_theme';
 const SESSION_API_KEY = 'spanish_assistant_session_key';
+
+// Keep track of the current user state directly in the service
+let currentUser: User | null = null;
+onAuthStateChanged(auth, user => {
+  currentUser = user;
+});
 
 // Helper to sanitize data for Firestore (removes undefined values)
 const sanitizeData = (data: any) => {
@@ -44,13 +51,13 @@ export const clearSessionApiKey = () => {
 
 // HELPER: Get vocabulary collection for current user
 const getVocabCollection = () => {
-  const user = auth.currentUser;
+  const user = currentUser;
   if (!user) return null;
   return collection(db, 'users', user.uid, 'vocabulary');
 };
 
 export const getVocab = async (): Promise<VocabItem[]> => {
-  const user = auth.currentUser;
+  const user = currentUser;
   
   if (user) {
     try {
@@ -75,7 +82,7 @@ export const getVocab = async (): Promise<VocabItem[]> => {
 };
 
 export const addVocabBatch = async (items: Array<Omit<VocabItem, 'id' | 'addedAt' | 'mastered'>>): Promise<number> => {
-    const user = auth.currentUser;
+    const user = currentUser;
     const addedAt = Date.now();
     let addedCount = 0;
 
@@ -139,7 +146,7 @@ export const addVocabBatch = async (items: Array<Omit<VocabItem, 'id' | 'addedAt
 };
 
 export const importVocabFromJson = async (items: VocabItem[]): Promise<number> => {
-  const user = auth.currentUser;
+  const user = currentUser;
   let importedCount = 0;
 
   if (user) {
@@ -188,7 +195,7 @@ export const importVocabFromJson = async (items: VocabItem[]): Promise<number> =
 };
 
 export const removeVocab = async (id: string) => {
-  const user = auth.currentUser;
+  const user = currentUser;
   if (user) {
     try {
       const docRef = doc(db, 'users', user.uid, 'vocabulary', id);
@@ -205,7 +212,7 @@ export const removeVocab = async (id: string) => {
 };
 
 export const toggleMastered = async (id: string) => {
-    const user = auth.currentUser;
+    const user = currentUser;
     const current = await getVocab();
     const item = current.find(i => i.id === id);
     if (!item) return;

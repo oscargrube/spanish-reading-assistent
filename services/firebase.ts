@@ -1,7 +1,8 @@
 
-import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
+import { initializeApp } from "firebase/app";
+import { getFirestore } from 'firebase/firestore';
+import { getAuth } from 'firebase/auth'; // Import getAuth
+import { getAnalytics } from "firebase/analytics";
 
 // NOTE: Replace these with your actual Firebase project configuration
 const firebaseConfig = {
@@ -15,13 +16,13 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-export const auth = getAuth(app);
 
-// Initialize Firestore with settings to ignore undefined properties
-// This prevents crashes when saving objects with optional fields like 'category'
-export const db = initializeFirestore(app, {
-  ignoreUndefinedProperties: true,
-  localCache: persistentLocalCache({
-    tabManager: persistentMultipleTabManager()
-  })
-});
+// Initialize Firebase Analytics for web
+if (typeof window !== 'undefined') {
+  getAnalytics(app);
+}
+
+const db = getFirestore(app);
+const auth = getAuth(app); // Initialize Firebase Auth
+
+export { db, auth };
