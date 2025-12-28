@@ -1,4 +1,5 @@
 
+
 import { GoogleGenAI, Type, Modality } from "@google/genai";
 import { PageAnalysisResult } from "../types";
 import { getSessionApiKey } from "./storageService";
@@ -44,6 +45,23 @@ async function decodeAudioData(
   return buffer;
 }
 
+// Define the properties for a word analysis object to be reused
+const wordProperties = {
+  word: { type: Type.STRING, description: "The word, phrase, punctuation, or space." },
+  type: { type: Type.STRING, enum: ['word', 'punctuation'], description: "Use 'word' for lexical units/phrases, 'punctuation' for symbols/spaces." },
+  translation: { type: Type.STRING, description: "German translation (required if type='word')." },
+  literalTranslation: { type: Type.STRING, description: "Literal 'word-for-word' German translation if different from meaning (e.g. 'hacer calor' -> 'Wärme machen')." },
+  explanation: { type: Type.STRING, description: "Detailed German Grammar/context explanation." },
+  category: { 
+    type: Type.STRING, 
+    enum: ['noun', 'verb', 'adjective', 'function'],
+    description: "Grammatical category."
+  },
+  baseForm: { type: Type.STRING, description: "Lemma/Infinitiv (ALWAYS required for verbs)." },
+  tense: { type: Type.STRING, description: "For verbs: The grammatical time (e.g. 'Präteritum', 'Futur I')." },
+  person: { type: Type.STRING, description: "For verbs: The grammatical person (e.g. '3. Pers. Sing.')." }
+};
+
 const analysisSchema = {
   type: Type.OBJECT,
   properties: {
@@ -59,16 +77,16 @@ const analysisSchema = {
             items: {
               type: Type.OBJECT,
               properties: {
-                word: { type: Type.STRING, description: "The word, phrase, punctuation, or space." },
-                type: { type: Type.STRING, enum: ['word', 'punctuation'], description: "Use 'word' for lexical units/phrases, 'punctuation' for symbols/spaces." },
-                translation: { type: Type.STRING, description: "German translation (required if type='word')." },
-                explanation: { type: Type.STRING, description: "German Grammar/context explanation (required if type='word')." },
-                category: { 
-                  type: Type.STRING, 
-                  enum: ['noun', 'verb', 'adjective', 'function'],
-                  description: "Grammatical category."
-                },
-                baseForm: { type: Type.STRING, description: "Lemma/Infinitiv." }
+                ...wordProperties,
+                subWords: {
+                  type: Type.ARRAY,
+                  description: "If this item is a multi-word phrase (e.g. 'se levantó'), list the individual words here with their own analysis.",
+                  items: {
+                    type: Type.OBJECT,
+                    properties: wordProperties, // Reuse properties for sub-words (no infinite recursion allowed in this schema structure, so just 1 level deep is fine)
+                    required: ["word", "type", "baseForm"]
+                  }
+                }
               },
               required: ["word", "type"]
             }
@@ -101,10 +119,15 @@ export const analyzeImage = async (base64Image: string): Promise<PageAnalysisRes
     Analyze the attached Spanish book page. You are an expert Spanish teacher.
     
     CRITICAL INSTRUCTIONS:
-    1. COMPLETE TRANSCRIPTION: You MUST process EVERY SINGLE SENTENCE visible on the page. Do not skip any sentences.
-    2. PHRASE BINDING: Combine words that belong together (reflexive verbs like "se levantó", idioms like "tener que") into a SINGLE 'word' object.
-    3. FULL CHARACTER COVERAGE: Reconstruct the 'original' string perfectly including spaces.
-    4. Provide the result in German.
+    1. COMPLETE TRANSCRIPTION: You MUST process EVERY SINGLE SENTENCE visible on the page.
+    2. PHRASE BINDING & BREAKDOWN: 
+       - If you find a phrase (idioms like "tener que", reflexive verbs like "se levantó", compound tenses like "ha comido"), combine them into a SINGLE 'word' object first.
+       - IMPORTANT: For these combined phrases, you MUST also populate the 'subWords' array with the analysis of the individual words (e.g. main: "se levantó", subWords: ["se", "levantó"]).
+    3. DETAILED VERB ANALYSIS: 
+       - For every verb (both in phrases and single words), you MUST provide the 'baseForm' (Infinitive).
+       - You MUST provide the 'tense' (Zeitform) and 'person' (Person) for verbs.
+    4. LITERAL TRANSLATION: If a phrase's meaning differs from the literal words (e.g. "hacer calor"), provide the literal translation in 'literalTranslation' (e.g. "Wärme machen").
+    5. Provide all results in German.
   `;
 
   try {
@@ -124,7 +147,7 @@ export const analyzeImage = async (base64Image: string): Promise<PageAnalysisRes
       config: {
         responseMimeType: "application/json",
         responseSchema: analysisSchema,
-        systemInstruction: "You are a professional Spanish-to-German translator. Extract all text and provide linguistic analysis for learners.",
+        systemInstruction: "You are a professional Spanish-to-German translator. Extract all text and provide deep linguistic analysis including grammar details and literal translations.",
       }
     });
 

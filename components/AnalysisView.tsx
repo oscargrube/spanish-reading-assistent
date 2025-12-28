@@ -1,8 +1,8 @@
 
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Play, Loader2, CheckCircle, ChevronRight, ChevronLeft, XCircle, Volume2, SkipForward, Save, BookOpen, Plus } from 'lucide-react';
-import { PageAnalysisResult, AppView, BookPage, Book } from '../types';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { Play, Loader2, CheckCircle, ChevronRight, ChevronLeft, XCircle, Volume2, SkipForward, Save, BookOpen, Plus, Undo2 } from 'lucide-react';
+import { PageAnalysisResult, AppView, BookPage, Book, WordAnalysis } from '../types';
 import { analyzeImage, generateSpeech } from '../services/geminiService';
 import { addVocabBatch, isVocabSaved, saveCurrentAnalysis, clearLastAnalysis, addPageToBook, updatePageProgress, getBooks, createBook } from '../services/storageService';
 
@@ -26,6 +26,7 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView, initialData, 
   // State for Reading Flow
   const [currentSentenceIndex, setCurrentSentenceIndex] = useState(0);
   const [phase, setPhase] = useState<FlowPhase>('sentence');
+  // currentWordIndex now refers to the flattened list of words (including subwords)
   const [currentWordIndex, setCurrentWordIndex] = useState(0);
 
   // State for Audio & Progress
@@ -66,11 +67,21 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView, initialData, 
   const syncSavedState = useCallback(async () => {
     if (!result) return;
     const currentWords = new Set<string>();
+    
+    const checkWord = async (w: WordAnalysis) => {
+        if (w.type === 'word' && await isVocabSaved(w.word)) {
+            currentWords.add(w.word.toLowerCase());
+        }
+        if (w.subWords) {
+            for (const sub of w.subWords) {
+                await checkWord(sub);
+            }
+        }
+    };
+
     for (const s of result.sentences) {
         for (const w of s.words) {
-            if (w.type === 'word' && await isVocabSaved(w.word)) {
-                currentWords.add(w.word.toLowerCase());
-            }
+            await checkWord(w);
         }
     }
     setSavedWords(currentWords);
@@ -132,19 +143,33 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView, initialData, 
           setActivePageId(pageId);
           setActiveBookId(bookId);
 
-          // 2. Save All Vocab Immediately
-          const allWords = analysisData.sentences.flatMap(s => 
-              s.words
-                  .filter(w => w.type === 'word')
-                  .map(w => ({
+          // 2. Save All Vocab Immediately (Flattened)
+          const flattenWords = (words: WordAnalysis[], context: string): any[] => {
+              return words.flatMap(w => {
+                  if (w.type !== 'word') return [];
+                  
+                  const mainWord = {
                       word: w.word,
                       translation: w.translation || '',
                       explanation: w.explanation || '',
+                      literalTranslation: w.literalTranslation,
                       category: w.category,
                       baseForm: w.baseForm,
-                      contextSentence: s.original
-                  }))
-          );
+                      tense: w.tense,
+                      person: w.person,
+                      contextSentence: context
+                  };
+                  
+                  let subList: any[] = [];
+                  if (w.subWords && w.subWords.length > 0) {
+                      subList = flattenWords(w.subWords, context);
+                  }
+                  
+                  return [mainWord, ...subList];
+              });
+          };
+
+          const allWords = analysisData.sentences.flatMap(s => flattenWords(s.words, s.original));
           
           if (allWords.length > 0) {
               const savedCount = await addVocabBatch(allWords);
@@ -231,21 +256,46 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView, initialData, 
     }
   };
 
+  // --- READING LOGIC ---
+
   const currentSentence = result?.sentences[currentSentenceIndex];
-  const lexicalWords = currentSentence?.words.filter(w => w.type === 'word') || [];
+  
+  // Flatten words for the current sentence: Phrase -> SubWords -> Next Phrase
+  const lexicalWordsQueue = useMemo(() => {
+      if (!currentSentence) return [];
+      
+      const queue: { word: WordAnalysis, parentWord?: string }[] = [];
+      
+      currentSentence.words.forEach(w => {
+          if (w.type === 'word') {
+              // Add the main word/phrase
+              queue.push({ word: w });
+              
+              // If it has subwords, add them immediately after
+              if (w.subWords && w.subWords.length > 0) {
+                  w.subWords.forEach(sw => {
+                      if (sw.type === 'word') {
+                        queue.push({ word: sw, parentWord: w.word });
+                      }
+                  });
+              }
+          }
+      });
+      return queue;
+  }, [currentSentence]);
 
   const handleNextPhase = useCallback(() => {
     if (!result || !currentSentence) return;
 
     if (phase === 'sentence') {
-        if (lexicalWords.length > 0) {
+        if (lexicalWordsQueue.length > 0) {
             setPhase('words');
             setCurrentWordIndex(0);
         } else {
             setPhase('translation');
         }
     } else if (phase === 'words') {
-        if (currentWordIndex < lexicalWords.length - 1) {
+        if (currentWordIndex < lexicalWordsQueue.length - 1) {
             setCurrentWordIndex(prev => prev + 1);
         } else {
             setPhase('translation');
@@ -257,10 +307,10 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView, initialData, 
             setCurrentWordIndex(0);
         } else {
             setFinished(true);
-            clearLastAnalysis(); // Clean up temp
+            clearLastAnalysis(); 
         }
     }
-  }, [result, phase, currentWordIndex, currentSentenceIndex, lexicalWords, currentSentence]);
+  }, [result, phase, currentWordIndex, currentSentenceIndex, lexicalWordsQueue, currentSentence]);
 
   const handleSkipToNextSentence = useCallback(() => {
     if (!result || !currentSentence) return;
@@ -275,11 +325,19 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView, initialData, 
     }
   }, [result, currentSentence, currentSentenceIndex]);
 
+  const handlePrevSentence = useCallback(() => {
+    if (currentSentenceIndex > 0) {
+        setCurrentSentenceIndex(prev => prev - 1);
+        setPhase('sentence');
+        setCurrentWordIndex(0);
+    }
+  }, [currentSentenceIndex]);
+
   const handlePrevPhase = () => {
     if (phase === 'translation') {
-        if (lexicalWords.length > 0) {
+        if (lexicalWordsQueue.length > 0) {
             setPhase('words');
-            setCurrentWordIndex(lexicalWords.length - 1);
+            setCurrentWordIndex(lexicalWordsQueue.length - 1);
         } else {
             setPhase('sentence');
         }
@@ -321,7 +379,7 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView, initialData, 
       <div className="fixed inset-0 bg-[#FDFBF7] dark:bg-[#12100E] flex flex-col items-center justify-center text-center p-6 z-50">
         <Loader2 className="w-12 h-12 animate-spin text-[#6B705C] dark:text-[#D4A373] mb-4" />
         <h2 className="text-xl font-serif font-bold text-[#2C2420] dark:text-[#FDFBF7]">Analysiere Seite...</h2>
-        <p className="text-sm text-[#6B705C] dark:text-[#A5A58D] font-serif italic mt-2">Texte werden erkannt und Vokabeln gespeichert.</p>
+        <p className="text-sm text-[#6B705C] dark:text-[#A5A58D] font-serif italic mt-2">Texte, Grammatik und Vokabeln werden erkannt.</p>
       </div>
     );
   }
@@ -436,7 +494,7 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView, initialData, 
       )
   }
 
-  const currentLexicalWord = lexicalWords[currentWordIndex];
+  const currentLexicalItem = lexicalWordsQueue[currentWordIndex];
 
   return (
     <div className="fixed inset-0 bg-[#FDFBF7] dark:bg-[#12100E] flex flex-col z-50 transition-colors">
@@ -484,7 +542,12 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView, initialData, 
                         <div className="bg-white dark:bg-[#1C1917] p-6 rounded-3xl border border-[#EAE2D6] dark:border-[#2C2420] shadow-sm">
                             <p className="text-xl font-serif text-[#2C2420] dark:text-[#FDFBF7] leading-relaxed">
                                 {currentSentence.words.map((w, idx) => {
-                                    const isCurrent = currentLexicalWord && w.word === currentLexicalWord.word;
+                                    // Highlight if it matches the current word OR if the current word is a child of this phrase
+                                    const isCurrent = currentLexicalItem && (
+                                        w.word === currentLexicalItem.word.word || 
+                                        w.word === currentLexicalItem.parentWord
+                                    );
+                                    
                                     return (
                                         <span key={idx} className={`transition-colors duration-300 ${isCurrent ? 'bg-[#FEFAE0] dark:bg-[#B26B4A]/20 text-[#B26B4A] dark:text-[#D4A373] font-bold px-1 rounded mx-0.5' : 'opacity-40'}`}>
                                             {w.word}
@@ -495,44 +558,77 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView, initialData, 
                         </div>
 
                         {/* Word Analysis Card */}
-                        {currentLexicalWord && (
+                        {currentLexicalItem && (
                             <div className="relative w-full bg-[#2C2420] dark:bg-[#1C1917] text-[#FDFBF7] p-8 rounded-[2.5rem] shadow-xl border border-transparent dark:border-[#2C2420] flex flex-col animate-fade-in">
                                 
                                 <button 
-                                    onClick={() => handlePlayAudio(currentLexicalWord.word, `w-${currentSentenceIndex}-${currentWordIndex}`)}
+                                    onClick={() => handlePlayAudio(currentLexicalItem.word.word, `w-${currentSentenceIndex}-${currentWordIndex}`)}
                                     className="absolute top-6 right-6 w-10 h-10 bg-[#B26B4A] dark:bg-[#D4A373] rounded-full flex items-center justify-center shadow-lg hover:scale-105 transition-transform z-10"
                                 >
                                     {playingAudio === `w-${currentSentenceIndex}-${currentWordIndex}` ? <Loader2 className="w-4 h-4 animate-spin text-white dark:text-[#12100E]"/> : <Volume2 className="w-4 h-4 text-white dark:text-[#12100E]" />}
                                 </button>
 
                                 <div className="mb-6">
-                                    <div className="flex items-center gap-3 mb-2">
+                                    <div className="flex flex-wrap items-center gap-2 mb-2">
+                                        {currentLexicalItem.parentWord && (
+                                            <span className="text-[9px] font-bold uppercase tracking-[0.1em] text-[#FDFBF7]/50 border border-[#FDFBF7]/20 px-2 py-0.5 rounded-full">
+                                                Teil von: {currentLexicalItem.parentWord}
+                                            </span>
+                                        )}
                                         <span className="text-[9px] font-bold uppercase tracking-[0.2em] text-[#B26B4A] dark:text-[#D4A373]">
-                                            {currentLexicalWord.category || 'Vokabel'}
+                                            {currentLexicalItem.word.category || 'Vokabel'}
                                         </span>
-                                        {savedWords.has(currentLexicalWord.word.toLowerCase()) && (
+                                        {savedWords.has(currentLexicalItem.word.word.toLowerCase()) && (
                                             <div className="flex items-center gap-1.5 bg-[#E9EDC9]/20 px-2 py-1 rounded-full">
                                                 <CheckCircle className="w-3 h-3 text-[#E9EDC9]" />
                                                 <span className="text-[7px] font-bold uppercase tracking-widest text-[#E9EDC9]">In Sammlung</span>
                                             </div>
                                         )}
                                     </div>
-                                    <h3 className="text-4xl font-serif font-bold text-[#FEFAE0] dark:text-[#D4A373] mb-2">{currentLexicalWord.word}</h3>
-                                    <p className="text-2xl font-serif italic text-[#FDFBF7]/90">{currentLexicalWord.translation}</p>
+                                    
+                                    <h3 className="text-4xl font-serif font-bold text-[#FEFAE0] dark:text-[#D4A373] mb-2">{currentLexicalItem.word.word}</h3>
+                                    
+                                    <p className="text-2xl font-serif italic text-[#FDFBF7]/90">{currentLexicalItem.word.translation}</p>
+                                    
+                                    {/* Literal Translation - Explicitly Requested */}
+                                    {currentLexicalItem.word.literalTranslation && (
+                                        <p className="text-sm text-[#FDFBF7]/60 mt-1">
+                                            <span className="font-bold uppercase text-[9px] tracking-wider opacity-70 mr-1">Wörtlich:</span>
+                                            <span className="italic">"{currentLexicalItem.word.literalTranslation}"</span>
+                                        </p>
+                                    )}
                                 </div>
                                 
-                                {currentLexicalWord.explanation && (
+                                {/* Grammar Details (Tense/Person) - Explicitly Requested for Verbs */}
+                                {(currentLexicalItem.word.tense || currentLexicalItem.word.person) && (
+                                    <div className="flex gap-2 mb-4">
+                                        {currentLexicalItem.word.tense && (
+                                            <div className="bg-[#B26B4A]/20 dark:bg-[#D4A373]/20 px-3 py-1.5 rounded-lg border border-[#B26B4A]/30 dark:border-[#D4A373]/30">
+                                                <span className="text-[9px] uppercase tracking-widest text-[#B26B4A] dark:text-[#D4A373] font-bold block opacity-70">Zeit</span>
+                                                <span className="text-sm font-serif text-[#FDFBF7]">{currentLexicalItem.word.tense}</span>
+                                            </div>
+                                        )}
+                                        {currentLexicalItem.word.person && (
+                                            <div className="bg-[#B26B4A]/20 dark:bg-[#D4A373]/20 px-3 py-1.5 rounded-lg border border-[#B26B4A]/30 dark:border-[#D4A373]/30">
+                                                <span className="text-[9px] uppercase tracking-widest text-[#B26B4A] dark:text-[#D4A373] font-bold block opacity-70">Person</span>
+                                                <span className="text-sm font-serif text-[#FDFBF7]">{currentLexicalItem.word.person}</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                                
+                                {currentLexicalItem.word.explanation && (
                                     <div className="bg-white/5 dark:bg-black/20 p-5 rounded-2xl border border-white/10 dark:border-white/5">
                                         <p className="text-base font-serif leading-relaxed text-[#FDFBF7]/80">
-                                            {currentLexicalWord.explanation}
+                                            {currentLexicalItem.word.explanation}
                                         </p>
                                     </div>
                                 )}
                                 
-                                {currentLexicalWord.baseForm && currentLexicalWord.baseForm !== currentLexicalWord.word && (
+                                {currentLexicalItem.word.baseForm && currentLexicalItem.word.baseForm !== currentLexicalItem.word.word && (
                                     <div className="mt-6 pt-4 border-t border-white/10">
                                         <p className="text-[10px] uppercase tracking-widest opacity-50 mb-1">Grundform</p>
-                                        <p className="font-serif italic text-lg">{currentLexicalWord.baseForm}</p>
+                                        <p className="font-serif italic text-lg">{currentLexicalItem.word.baseForm}</p>
                                     </div>
                                 )}
                             </div>
@@ -571,35 +667,48 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView, initialData, 
 
         {/* Sticky Footer */}
         <div className="absolute bottom-0 left-0 right-0 px-6 py-6 bg-[#FDFBF7] dark:bg-[#12100E] border-t border-[#EAE2D6] dark:border-[#2C2420] z-30 transition-colors">
-            <div className="flex gap-3 max-w-lg mx-auto">
-                <button 
-                    onClick={handlePrevPhase}
-                    disabled={phase === 'sentence' && currentSentenceIndex === 0}
-                    className="w-14 h-14 flex items-center justify-center bg-white dark:bg-[#1C1917] border border-[#EAE2D6] dark:border-[#2C2420] rounded-2xl text-[#6B705C] dark:text-[#A5A58D] disabled:opacity-20 active:scale-95 transition-all shadow-sm"
-                >
-                    <ChevronLeft className="w-6 h-6" />
-                </button>
-                
-                {/* Dynamic Main Button */}
-                <button 
-                    onClick={handleNextPhase}
-                    className={`flex-grow h-14 rounded-2xl flex items-center justify-center gap-3 font-bold text-[10px] uppercase tracking-[0.2em] shadow-lg active:scale-95 transition-all ${
-                        phase === 'translation' ? 'bg-[#B26B4A] dark:bg-[#D4A373] text-white dark:text-[#12100E]' : 'bg-[#2C2420] dark:bg-white text-white dark:text-[#12100E]'
-                    }`}
-                >
-                    {phase === 'sentence' ? 'Wörter analysieren' : phase === 'words' && currentWordIndex < lexicalWords.length - 1 ? 'Nächstes Wort' : phase === 'words' ? 'Zur Übersetzung' : 'Nächster Satz'}
-                    <ChevronRight className="w-4 h-4" />
-                </button>
-
-                {/* Skip Button (Only visible in sentence phase) */}
-                {phase === 'sentence' && (
-                     <button 
-                        onClick={handleSkipToNextSentence}
-                        className="w-14 h-14 flex items-center justify-center bg-white dark:bg-[#1C1917] border border-[#EAE2D6] dark:border-[#2C2420] rounded-2xl text-[#6B705C] dark:text-[#A5A58D] active:scale-95 transition-all shadow-sm"
-                        title="Satz überspringen"
+            <div className="flex flex-col gap-2 max-w-lg mx-auto">
+                <div className="flex gap-3">
+                    <button 
+                        onClick={handlePrevPhase}
+                        disabled={phase === 'sentence' && currentSentenceIndex === 0}
+                        className="w-14 h-14 flex items-center justify-center bg-white dark:bg-[#1C1917] border border-[#EAE2D6] dark:border-[#2C2420] rounded-2xl text-[#6B705C] dark:text-[#A5A58D] disabled:opacity-20 active:scale-95 transition-all shadow-sm"
                     >
-                        <SkipForward className="w-6 h-6" />
+                        <ChevronLeft className="w-6 h-6" />
                     </button>
+                    
+                    {/* Dynamic Main Button */}
+                    <button 
+                        onClick={handleNextPhase}
+                        className={`flex-grow h-14 rounded-2xl flex items-center justify-center gap-3 font-bold text-[10px] uppercase tracking-[0.2em] shadow-lg active:scale-95 transition-all ${
+                            phase === 'translation' ? 'bg-[#B26B4A] dark:bg-[#D4A373] text-white dark:text-[#12100E]' : 'bg-[#2C2420] dark:bg-white text-white dark:text-[#12100E]'
+                        }`}
+                    >
+                        {phase === 'sentence' ? 'Wörter analysieren' : phase === 'words' && currentWordIndex < lexicalWordsQueue.length - 1 ? 'Nächstes Wort' : phase === 'words' ? 'Zur Übersetzung' : 'Nächster Satz'}
+                        <ChevronRight className="w-4 h-4" />
+                    </button>
+
+                    {/* Skip Button (Only visible in sentence phase) */}
+                    {phase === 'sentence' && (
+                         <button 
+                            onClick={handleSkipToNextSentence}
+                            className="w-14 h-14 flex items-center justify-center bg-white dark:bg-[#1C1917] border border-[#EAE2D6] dark:border-[#2C2420] rounded-2xl text-[#6B705C] dark:text-[#A5A58D] active:scale-95 transition-all shadow-sm"
+                            title="Satz überspringen"
+                        >
+                            <SkipForward className="w-6 h-6" />
+                        </button>
+                    )}
+                </div>
+
+                {/* Previous Sentence Button (Explicitly Requested) */}
+                {currentSentenceIndex > 0 && (
+                     <button 
+                         onClick={handlePrevSentence}
+                         className="flex items-center justify-center gap-2 text-[#A5A58D] text-[9px] uppercase tracking-widest hover:text-[#2C2420] dark:hover:text-[#FDFBF7] py-2"
+                     >
+                         <Undo2 className="w-3 h-3" />
+                         Vorherigen Satz wiederholen
+                     </button>
                 )}
             </div>
         </div>

@@ -6,9 +6,13 @@ export interface WordAnalysis {
   word: string;
   translation?: string;
   explanation?: string;
+  literalTranslation?: string; // New: Wörtliche Übersetzung
   category?: WordCategory;
   baseForm?: string;
   type?: 'word' | 'punctuation';
+  tense?: string; // New: Zeitform (e.g. "Präteritum")
+  person?: string; // New: Person (e.g. "3. Pers. Sing.")
+  subWords?: WordAnalysis[]; // New: Individual words if this is a phrase
 }
 
 export interface SentenceAnalysis {
@@ -26,9 +30,12 @@ export interface VocabItem {
   word: string;
   translation: string;
   explanation: string;
+  literalTranslation?: string;
   category?: WordCategory;
   baseForm?: string;
   contextSentence?: string;
+  tense?: string;
+  person?: string;
   addedAt: number;
   mastered: boolean;
 }
