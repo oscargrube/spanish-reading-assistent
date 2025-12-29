@@ -1,6 +1,4 @@
-
-
-import { VocabItem, PageAnalysisResult, PersistedAnalysis, Book, BookPage } from '../types';
+import { VocabItem, PageAnalysisResult, PersistedAnalysis, Book, BookPage, MasteryLevel } from '../types';
 import { db, auth } from './firebase';
 import { 
   collection, 
@@ -25,13 +23,11 @@ const THEME_KEY = 'spanish_assistant_theme';
 const SESSION_API_KEY = 'spanish_assistant_session_key';
 const BOOKS_KEY = 'spanish_assistant_books';
 
-// Keep track of the current user state directly in the service
 let currentUser: User | null = null;
 onAuthStateChanged(auth, user => {
   currentUser = user;
 });
 
-// Helper to sanitize data for Firestore (removes undefined values)
 const sanitizeData = (data: any) => {
   const sanitized: any = {};
   Object.keys(data).forEach(key => {
@@ -42,7 +38,6 @@ const sanitizeData = (data: any) => {
   return sanitized;
 };
 
-// API Key Session Management
 export const setSessionApiKey = (key: string) => {
   sessionStorage.setItem(SESSION_API_KEY, key);
 };
@@ -55,7 +50,6 @@ export const clearSessionApiKey = () => {
   sessionStorage.removeItem(SESSION_API_KEY);
 };
 
-// HELPER: Get vocabulary collection for current user
 const getVocabCollection = () => {
   const user = currentUser;
   if (!user) return null;
@@ -64,14 +58,20 @@ const getVocabCollection = () => {
 
 export const getVocab = async (): Promise<VocabItem[]> => {
   const user = currentUser;
-  
   if (user) {
     try {
       const colRef = getVocabCollection();
       if (!colRef) return [];
       const q = query(colRef, orderBy('addedAt', 'desc'));
       const querySnapshot = await getDocs(q);
-      return querySnapshot.docs.map(doc => doc.data() as VocabItem);
+      return querySnapshot.docs.map(doc => {
+          const data = doc.data() as VocabItem;
+          // Normalize legacy data
+          if (!data.masteryLevel) {
+              data.masteryLevel = data.mastered ? 'mastered' : 'new';
+          }
+          return { ...data, id: doc.id };
+      });
     } catch (e) {
       console.error("Failed to load vocab from Firestore", e);
       return [];
@@ -80,20 +80,22 @@ export const getVocab = async (): Promise<VocabItem[]> => {
 
   try {
     const stored = localStorage.getItem(VOCAB_KEY);
-    return stored ? JSON.parse(stored) : [];
+    const parsed = stored ? JSON.parse(stored) : [];
+    return parsed.map((item: any) => ({
+        ...item,
+        masteryLevel: item.masteryLevel || (item.mastered ? 'mastered' : 'new')
+    }));
   } catch (e) {
     console.error("Failed to load vocab from LocalStorage", e);
     return [];
   }
 };
 
-export const addVocabBatch = async (items: Array<Omit<VocabItem, 'id' | 'addedAt' | 'mastered'>>): Promise<number> => {
+export const addVocabBatch = async (items: Array<Omit<VocabItem, 'id' | 'addedAt' | 'mastered' | 'masteryLevel'>>): Promise<number> => {
     const user = currentUser;
     const addedAt = Date.now();
     let addedCount = 0;
 
-    // Load existing to prevent duplicates (client side check)
-    // In a scalable app, this would be a server-side check or use Firestore keys
     const current = await getVocab();
     const existingWords = new Set(current.map(v => v.word.trim().toLowerCase()));
 
@@ -104,17 +106,17 @@ export const addVocabBatch = async (items: Array<Omit<VocabItem, 'id' | 'addedAt
             if (!colRef) return 0;
 
             let ops = 0;
-            // Limit batches to 500 ops if necessary, for now assuming safe batch size
             for (const item of items) {
                 const normalizedWord = item.word.trim().toLowerCase();
                 if (!existingWords.has(normalizedWord) && normalizedWord.length > 0) {
                     const id = crypto.randomUUID();
                     const newItem: VocabItem = {
                         ...item,
-                        word: item.word.trim(), // Ensure stored word is trimmed
+                        word: item.word.trim(),
                         id,
                         addedAt,
                         mastered: false,
+                        masteryLevel: 'new'
                     };
                     const docRef = doc(colRef, id);
                     batch.set(docRef, sanitizeData(newItem));
@@ -123,10 +125,7 @@ export const addVocabBatch = async (items: Array<Omit<VocabItem, 'id' | 'addedAt
                     ops++;
                 }
             }
-            
-            if (ops > 0) {
-                await batch.commit();
-            }
+            if (ops > 0) await batch.commit();
             return addedCount;
         } catch (e) {
             console.error("Batch add failed in Firestore", e);
@@ -144,6 +143,7 @@ export const addVocabBatch = async (items: Array<Omit<VocabItem, 'id' | 'addedAt
                 id: crypto.randomUUID(),
                 addedAt,
                 mastered: false,
+                masteryLevel: 'new'
             });
             addedCount++;
             existingWords.add(normalizedWord);
@@ -154,6 +154,42 @@ export const addVocabBatch = async (items: Array<Omit<VocabItem, 'id' | 'addedAt
         localStorage.setItem(VOCAB_KEY, JSON.stringify(updated));
     }
     return addedCount;
+};
+
+export const updateVocabStatus = async (id: string, level: MasteryLevel) => {
+    const user = currentUser;
+    const mastered = level === 'mastered';
+    
+    if (user) {
+        try {
+            const docRef = doc(db, 'users', user.uid, 'vocabulary', id);
+            await updateDoc(docRef, { masteryLevel: level, mastered });
+            return;
+        } catch (e) { console.error(e); }
+    }
+
+    const current = await getVocab();
+    const updated = current.map(item => item.id === id ? { ...item, masteryLevel: level, mastered } : item);
+    localStorage.setItem(VOCAB_KEY, JSON.stringify(updated));
+};
+
+export const removeVocabBatch = async (ids: string[]) => {
+    const user = currentUser;
+    if (user) {
+        try {
+            const batch = writeBatch(db);
+            ids.forEach(id => {
+                const docRef = doc(db, 'users', user.uid, 'vocabulary', id);
+                batch.delete(docRef);
+            });
+            await batch.commit();
+            return;
+        } catch (e) { console.error(e); }
+    }
+
+    const current = await getVocab();
+    const updated = current.filter(item => !ids.includes(item.id));
+    localStorage.setItem(VOCAB_KEY, JSON.stringify(updated));
 };
 
 export const importVocabFromJson = async (items: VocabItem[]): Promise<number> => {
@@ -173,7 +209,7 @@ export const importVocabFromJson = async (items: VocabItem[]): Promise<number> =
         if (!existingWords.has(item.word.trim().toLowerCase())) {
           const id = item.id || crypto.randomUUID();
           const docRef = doc(colRef, id);
-          const itemToSave = { ...item, id };
+          const itemToSave = { ...item, id, masteryLevel: item.masteryLevel || 'new' };
           batch.set(docRef, sanitizeData(itemToSave));
           importedCount++;
           existingWords.add(item.word.trim().toLowerCase());
@@ -193,7 +229,7 @@ export const importVocabFromJson = async (items: VocabItem[]): Promise<number> =
 
   items.forEach(item => {
     if (!existingWords.has(item.word.trim().toLowerCase())) {
-      updated.unshift({ ...item, id: item.id || crypto.randomUUID() });
+      updated.unshift({ ...item, id: item.id || crypto.randomUUID(), masteryLevel: item.masteryLevel || 'new' });
       importedCount++;
       existingWords.add(item.word.trim().toLowerCase());
     }
@@ -206,42 +242,14 @@ export const importVocabFromJson = async (items: VocabItem[]): Promise<number> =
 };
 
 export const removeVocab = async (id: string) => {
-  const user = currentUser;
-  if (user) {
-    try {
-      const docRef = doc(db, 'users', user.uid, 'vocabulary', id);
-      await deleteDoc(docRef);
-      return;
-    } catch (e) {
-      console.error("Failed to delete from Firestore", e);
-    }
-  }
-
-  const current = await getVocab();
-  const updated = current.filter(item => item.id !== id);
-  localStorage.setItem(VOCAB_KEY, JSON.stringify(updated));
+  await removeVocabBatch([id]);
 };
 
 export const toggleMastered = async (id: string) => {
-    const user = currentUser;
     const current = await getVocab();
     const item = current.find(i => i.id === id);
     if (!item) return;
-
-    const updatedItem = { ...item, mastered: !item.mastered };
-
-    if (user) {
-        try {
-            const docRef = doc(db, 'users', user.uid, 'vocabulary', id);
-            await setDoc(docRef, sanitizeData(updatedItem), { merge: true });
-            return;
-        } catch (e) {
-            console.error("Failed to update Firestore", e);
-        }
-    }
-
-    const updatedList = current.map(i => i.id === id ? updatedItem : i);
-    localStorage.setItem(VOCAB_KEY, JSON.stringify(updatedList));
+    await updateVocabStatus(id, item.masteryLevel === 'mastered' ? 'good' : 'mastered');
 }
 
 export const isVocabSaved = async (word: string): Promise<boolean> => {
@@ -249,7 +257,6 @@ export const isVocabSaved = async (word: string): Promise<boolean> => {
     return current.some(v => v.word.trim().toLowerCase() === word.trim().toLowerCase());
 }
 
-// Deprecated in new flow, but kept for legacy
 export const saveCurrentAnalysis = (data: PageAnalysisResult, image: string) => {
     const entry: PersistedAnalysis = { data, image, timestamp: Date.now() };
     localStorage.setItem(ANALYSIS_KEY, JSON.stringify(entry));
@@ -281,8 +288,6 @@ export const setTheme = (theme: 'light' | 'dark') => {
   localStorage.setItem(THEME_KEY, theme);
 };
 
-// --- BOOK & PAGE MANAGEMENT ---
-
 export const getBooks = async (): Promise<Book[]> => {
     const user = currentUser;
     if (user) {
@@ -296,8 +301,6 @@ export const getBooks = async (): Promise<Book[]> => {
             return [];
         }
     }
-    
-    // LocalStorage fallback
     const stored = localStorage.getItem(BOOKS_KEY);
     return stored ? JSON.parse(stored) : [];
 };
@@ -334,17 +337,13 @@ export const deleteBook = async (bookId: string) => {
      const user = currentUser;
      if (user) {
          try {
-             // Note: This leaves subcollections (pages) orphaned in standard Firestore. 
-             // In a real production app, we would use a cloud function to delete recursively.
              await deleteDoc(doc(db, 'users', user.uid, 'books', bookId));
              return;
          } catch(e) { console.error(e) }
      }
-
      const books = await getBooks();
      const updated = books.filter(b => b.id !== bookId);
      localStorage.setItem(BOOKS_KEY, JSON.stringify(updated));
-     // Also remove pages
      localStorage.removeItem(`${BOOKS_KEY}_pages_${bookId}`);
 }
 
@@ -361,15 +360,12 @@ export const getBookPages = async (bookId: string): Promise<BookPage[]> => {
             return [];
         }
     }
-
     const stored = localStorage.getItem(`${BOOKS_KEY}_pages_${bookId}`);
     return stored ? JSON.parse(stored) : [];
 };
 
 export const addPageToBook = async (bookId: string, image: string, analysis: PageAnalysisResult): Promise<string> => {
     const user = currentUser;
-    
-    // Calculate next page number
     const currentPages = await getBookPages(bookId);
     const pageNumber = currentPages.length + 1;
 
@@ -386,13 +382,8 @@ export const addPageToBook = async (bookId: string, image: string, analysis: Pag
         try {
             const bookRef = doc(db, 'users', user.uid, 'books', bookId);
             const pagesColRef = collection(bookRef, 'pages');
-            
             const docRef = await addDoc(pagesColRef, newPage);
-            
-            // Increment page count on book
-            await updateDoc(bookRef, {
-                pageCount: increment(1)
-            });
+            await updateDoc(bookRef, { pageCount: increment(1) });
             return docRef.id;
         } catch (e) {
             console.error("Failed to add page", e);
@@ -402,13 +393,10 @@ export const addPageToBook = async (bookId: string, image: string, analysis: Pag
 
     const id = crypto.randomUUID();
     const pageWithId = { ...newPage, id };
-    
-    // Save pages
     const pages = await getBookPages(bookId);
     pages.push(pageWithId);
     localStorage.setItem(`${BOOKS_KEY}_pages_${bookId}`, JSON.stringify(pages));
 
-    // Update book count
     const books = await getBooks();
     const bookIndex = books.findIndex(b => b.id === bookId);
     if (bookIndex >= 0) {
@@ -426,7 +414,6 @@ export const updatePageProgress = async (bookId: string, pageId: string, sentenc
             await updateDoc(pageRef, { lastSentenceIndex: sentenceIndex });
         } catch (e) { console.error("Failed to save progress", e); }
     } else {
-        // Local storage update
         const stored = localStorage.getItem(`${BOOKS_KEY}_pages_${bookId}`);
         if(stored) {
              const pages = JSON.parse(stored) as BookPage[];

@@ -1,7 +1,6 @@
 
-
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { Play, Loader2, CheckCircle, ChevronRight, ChevronLeft, XCircle, Volume2, SkipForward, Save, BookOpen, Plus, Undo2 } from 'lucide-react';
+import { Play, Loader2, CheckCircle, ChevronRight, ChevronLeft, XCircle, Volume2, SkipForward, Save, BookOpen, Plus, Undo2, ArrowLeft } from 'lucide-react';
 import { PageAnalysisResult, AppView, BookPage, Book, WordAnalysis } from '../types';
 import { analyzeImage, generateSpeech } from '../services/geminiService';
 import { addVocabBatch, isVocabSaved, saveCurrentAnalysis, clearLastAnalysis, addPageToBook, updatePageProgress, getBooks, createBook } from '../services/storageService';
@@ -590,7 +589,7 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView, initialData, 
                                     
                                     <p className="text-2xl font-serif italic text-[#FDFBF7]/90">{currentLexicalItem.word.translation}</p>
                                     
-                                    {/* Literal Translation - Explicitly Requested */}
+                                    {/* Literal Translation */}
                                     {currentLexicalItem.word.literalTranslation && (
                                         <p className="text-sm text-[#FDFBF7]/60 mt-1">
                                             <span className="font-bold uppercase text-[9px] tracking-wider opacity-70 mr-1">Wörtlich:</span>
@@ -599,7 +598,7 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView, initialData, 
                                     )}
                                 </div>
                                 
-                                {/* Grammar Details (Tense/Person) - Explicitly Requested for Verbs */}
+                                {/* Grammar Details (Tense/Person) */}
                                 {(currentLexicalItem.word.tense || currentLexicalItem.word.person) && (
                                     <div className="flex gap-2 mb-4">
                                         {currentLexicalItem.word.tense && (
@@ -669,12 +668,14 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView, initialData, 
         <div className="absolute bottom-0 left-0 right-0 px-6 py-6 bg-[#FDFBF7] dark:bg-[#12100E] border-t border-[#EAE2D6] dark:border-[#2C2420] z-30 transition-colors">
             <div className="flex flex-col gap-2 max-w-lg mx-auto">
                 <div className="flex gap-3">
+                    {/* Left Button Logic: Only show "Back" in sentence phase, or "Prev Phase" in others */}
                     <button 
-                        onClick={handlePrevPhase}
+                        onClick={phase === 'sentence' ? handlePrevSentence : handlePrevPhase}
                         disabled={phase === 'sentence' && currentSentenceIndex === 0}
                         className="w-14 h-14 flex items-center justify-center bg-white dark:bg-[#1C1917] border border-[#EAE2D6] dark:border-[#2C2420] rounded-2xl text-[#6B705C] dark:text-[#A5A58D] disabled:opacity-20 active:scale-95 transition-all shadow-sm"
+                        title={phase === 'sentence' ? "Letzter Satz" : "Zurück"}
                     >
-                        <ChevronLeft className="w-6 h-6" />
+                        {phase === 'sentence' ? <ArrowLeft className="w-6 h-6" /> : <ChevronLeft className="w-6 h-6" />}
                     </button>
                     
                     {/* Dynamic Main Button */}
@@ -688,7 +689,7 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView, initialData, 
                         <ChevronRight className="w-4 h-4" />
                     </button>
 
-                    {/* Skip Button (Only visible in sentence phase) */}
+                    {/* Skip Forward Button (Only visible in sentence phase) */}
                     {phase === 'sentence' && (
                          <button 
                             onClick={handleSkipToNextSentence}
@@ -699,17 +700,6 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onChangeView, initialData, 
                         </button>
                     )}
                 </div>
-
-                {/* Previous Sentence Button (Explicitly Requested) */}
-                {currentSentenceIndex > 0 && (
-                     <button 
-                         onClick={handlePrevSentence}
-                         className="flex items-center justify-center gap-2 text-[#A5A58D] text-[9px] uppercase tracking-widest hover:text-[#2C2420] dark:hover:text-[#FDFBF7] py-2"
-                     >
-                         <Undo2 className="w-3 h-3" />
-                         Vorherigen Satz wiederholen
-                     </button>
-                )}
             </div>
         </div>
     </div>

@@ -1,10 +1,7 @@
-
-
 import { GoogleGenAI, Type, Modality } from "@google/genai";
 import { PageAnalysisResult } from "../types";
 import { getSessionApiKey } from "./storageService";
 
-// Helper to encode string to base64
 function encode(bytes: Uint8Array) {
   let binary = '';
   const len = bytes.byteLength;
@@ -14,7 +11,6 @@ function encode(bytes: Uint8Array) {
   return btoa(binary);
 }
 
-// Helper to decode base64 to bytes
 function decode(base64: string) {
   const binaryString = atob(base64);
   const len = binaryString.length;
@@ -25,7 +21,6 @@ function decode(base64: string) {
   return bytes;
 }
 
-// Helper to decode audio data
 async function decodeAudioData(
   data: Uint8Array,
   ctx: AudioContext,
@@ -45,7 +40,6 @@ async function decodeAudioData(
   return buffer;
 }
 
-// Define the properties for a word analysis object to be reused
 const wordProperties = {
   word: { type: Type.STRING, description: "The word, phrase, punctuation, or space." },
   type: { type: Type.STRING, enum: ['word', 'punctuation'], description: "Use 'word' for lexical units/phrases, 'punctuation' for symbols/spaces." },
@@ -83,7 +77,7 @@ const analysisSchema = {
                   description: "If this item is a multi-word phrase (e.g. 'se levantó'), list the individual words here with their own analysis.",
                   items: {
                     type: Type.OBJECT,
-                    properties: wordProperties, // Reuse properties for sub-words (no infinite recursion allowed in this schema structure, so just 1 level deep is fine)
+                    properties: wordProperties,
                     required: ["word", "type", "baseForm"]
                   }
                 }
@@ -99,13 +93,10 @@ const analysisSchema = {
   required: ["sentences"]
 };
 
-// Modified: Check sessionStorage first, then process.env.API_KEY
 const getAI = () => {
     const sessionKey = getSessionApiKey();
     const envKey = process.env.API_KEY;
-    
     const apiKey = sessionKey || envKey;
-    
     if (!apiKey) {
         throw new Error("Kein API Key gefunden. Bitte geben Sie einen in den Einstellungen ein.");
     }
@@ -114,19 +105,17 @@ const getAI = () => {
 
 export const analyzeImage = async (base64Image: string): Promise<PageAnalysisResult> => {
   const ai = getAI();
-  
   const prompt = `
     Analyze the attached Spanish book page. You are an expert Spanish teacher.
-    
     CRITICAL INSTRUCTIONS:
     1. COMPLETE TRANSCRIPTION: You MUST process EVERY SINGLE SENTENCE visible on the page.
     2. PHRASE BINDING & BREAKDOWN: 
        - If you find a phrase (idioms like "tener que", reflexive verbs like "se levantó", compound tenses like "ha comido"), combine them into a SINGLE 'word' object first.
-       - IMPORTANT: For these combined phrases, you MUST also populate the 'subWords' array with the analysis of the individual words (e.g. main: "se levantó", subWords: ["se", "levantó"]).
+       - IMPORTANT: For these combined phrases, you MUST also populate the 'subWords' array with the analysis of the individual words.
     3. DETAILED VERB ANALYSIS: 
-       - For every verb (both in phrases and single words), you MUST provide the 'baseForm' (Infinitive).
+       - For every verb, you MUST provide the 'baseForm' (Infinitive).
        - You MUST provide the 'tense' (Zeitform) and 'person' (Person) for verbs.
-    4. LITERAL TRANSLATION: If a phrase's meaning differs from the literal words (e.g. "hacer calor"), provide the literal translation in 'literalTranslation' (e.g. "Wärme machen").
+    4. LITERAL TRANSLATION: If a phrase's meaning differs from the literal words, provide the literal translation in 'literalTranslation'.
     5. Provide all results in German.
   `;
 
@@ -135,12 +124,7 @@ export const analyzeImage = async (base64Image: string): Promise<PageAnalysisRes
       model: 'gemini-3-flash-preview', 
       contents: {
         parts: [
-          {
-            inlineData: {
-              mimeType: 'image/jpeg',
-              data: base64Image
-            }
-          },
+          { inlineData: { mimeType: 'image/jpeg', data: base64Image } },
           { text: prompt }
         ]
       },
@@ -150,10 +134,8 @@ export const analyzeImage = async (base64Image: string): Promise<PageAnalysisRes
         systemInstruction: "You are a professional Spanish-to-German translator. Extract all text and provide deep linguistic analysis including grammar details and literal translations.",
       }
     });
-
     const text = response.text;
     if (!text) throw new Error("No response text from Gemini.");
-    
     return JSON.parse(text) as PageAnalysisResult;
   } catch (error) {
     console.error("Analysis failed:", error);
@@ -163,7 +145,6 @@ export const analyzeImage = async (base64Image: string): Promise<PageAnalysisRes
 
 export const generateSpeech = async (text: string): Promise<void> => {
   const ai = getAI();
-
   try {
     const response = await ai.models.generateContent({
         model: "gemini-2.5-flash-preview-tts",
@@ -171,36 +152,49 @@ export const generateSpeech = async (text: string): Promise<void> => {
         config: {
           responseModalities: [Modality.AUDIO],
           speechConfig: {
-              voiceConfig: {
-                prebuiltVoiceConfig: { voiceName: 'Puck' },
-              },
+              voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Puck' } },
           },
         },
       });
-
       const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-      if (!base64Audio) {
-          throw new Error("No audio data returned");
-      }
-
+      if (!base64Audio) throw new Error("No audio data returned");
       const outputAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({sampleRate: 24000});
       const outputNode = outputAudioContext.createGain();
       outputNode.connect(outputAudioContext.destination);
-
-      const audioBuffer = await decodeAudioData(
-        decode(base64Audio),
-        outputAudioContext,
-        24000,
-        1,
-      );
-      
+      const audioBuffer = await decodeAudioData(decode(base64Audio), outputAudioContext, 24000, 1);
       const source = outputAudioContext.createBufferSource();
       source.buffer = audioBuffer;
       source.connect(outputNode);
       source.start();
-
   } catch (error) {
       console.error("TTS failed:", error);
       throw error;
   }
+}
+
+export const generateExampleSentence = async (word: string, category: string): Promise<{ sentence: string, translation: string }> => {
+    const ai = getAI();
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-3-flash-preview',
+            contents: `Generiere einen einfachen spanischen Beispielsatz für das Wort "${word}" (${category}). 
+            Antworte im JSON Format mit den Feldern "sentence" (Spanisch) und "translation" (Deutsch).`,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        sentence: { type: Type.STRING },
+                        translation: { type: Type.STRING }
+                    },
+                    required: ["sentence", "translation"]
+                }
+            }
+        });
+        const text = response.text;
+        return JSON.parse(text || "{}");
+    } catch (e) {
+        console.error(e);
+        return { sentence: "Fehler beim Generieren.", translation: "" };
+    }
 }

@@ -1,18 +1,18 @@
-
-
 export type WordCategory = 'noun' | 'verb' | 'adjective' | 'function';
+
+export type MasteryLevel = 'new' | 'again' | 'medium' | 'good' | 'mastered';
 
 export interface WordAnalysis {
   word: string;
   translation?: string;
   explanation?: string;
-  literalTranslation?: string; // New: Wörtliche Übersetzung
+  literalTranslation?: string;
   category?: WordCategory;
   baseForm?: string;
   type?: 'word' | 'punctuation';
-  tense?: string; // New: Zeitform (e.g. "Präteritum")
-  person?: string; // New: Person (e.g. "3. Pers. Sing.")
-  subWords?: WordAnalysis[]; // New: Individual words if this is a phrase
+  tense?: string;
+  person?: string;
+  subWords?: WordAnalysis[];
 }
 
 export interface SentenceAnalysis {
@@ -37,14 +37,15 @@ export interface VocabItem {
   tense?: string;
   person?: string;
   addedAt: number;
-  mastered: boolean;
+  mastered: boolean; // Deprecated but kept for compatibility
+  masteryLevel?: MasteryLevel;
 }
 
 export interface Book {
   id: string;
   title: string;
   author?: string;
-  coverStyle?: string; // CSS color class or similar
+  coverStyle?: string;
   createdAt: number;
   pageCount: number;
 }
